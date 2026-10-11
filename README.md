@@ -4,7 +4,7 @@ Gestão financeira pessoal pelo WhatsApp. A pessoa manda um texto, uma foto de c
 
 ## O que esta primeira versão faz
 
-- Recebe mensagens no WhatsApp (API oficial da Meta).
+- Recebe mensagens no WhatsApp (API oficial da Meta) ou no Telegram.
 - Entende **texto**, **foto/print** e **PDF** (extrato ou fatura com vários lançamentos de uma vez). Áudio ainda não.
 - Classifica usando as categorias da aba **Contas** da planilha de cada pessoa (Essencial / Necessária / Supérflua / Renda), mais as categorias próprias que a pessoa já usa no fluxo. Também olha os lançamentos recentes para repetir o jeito como ela classifica cada estabelecimento.
 - Grava na aba **Cashflow** da planilha Google da pessoa, logo abaixo do último lançamento, preenchendo DATA, DESPESA, Descrição, NOME, PAGO COM, Banco e VALOR. Se TIPO e CAIXA já têm fórmula, ficam como estão; se estão vazios, o robô preenche o TIPO e a fórmula do saldo acumulado.
@@ -48,6 +48,14 @@ Crie uma chave em https://platform.claude.com (API Keys) e guarde para o passo 5
 3. Em *Configurações do app > Básico* copie a **Chave secreta do app** (`WHATSAPP_APP_SECRET`).
 4. Invente uma senha qualquer para `WHATSAPP_VERIFY_TOKEN`.
 5. O token temporário expira em 24h. Para o piloto, gere um token permanente em *Configurações do negócio > Usuários do sistema*.
+
+O número de teste da Meta é dos EUA, e a Meta bloqueia empresas novas de fora do Brasil de mandar mensagens para números brasileiros (erro 130497). Para atender no Brasil, verifique a empresa na Meta e cadastre um número brasileiro. Enquanto isso, use o Telegram.
+
+### 3b. Telegram (opcional, sem esse bloqueio)
+1. No Telegram, fale com **@BotFather**, mande `/newbot` e siga os passos. Ele devolve o **token** (`TELEGRAM_BOT_TOKEN`).
+2. Invente uma senha só com letras, números, `_` e `-` para `TELEGRAM_WEBHOOK_SECRET`.
+3. Depois de publicar, abra no navegador `https://SEU-APP.vercel.app/api/telegram?configurar=SUA_SENHA`. Deve aparecer `"ok":true`.
+4. Mande "oi" para o bot. Quem não está cadastrado recebe um código; coloque esse código no campo `telegram` da pessoa em `DINOMONEY_USUARIOS`.
 
 ### 4. Usuários do piloto
 Em `DINOMONEY_USUARIOS`, uma lista com cada pessoa: telefone, ID da planilha (o trecho da URL entre `/d/` e `/edit`), nome da aba do fluxo, contas e cartões. Veja o exemplo em `.env.example`.

@@ -12,6 +12,8 @@ const UsuarioSchema = z.object({
   nome: z.string().min(1),
   /** Número no formato internacional, só dígitos (ex.: 5511999998888). */
   telefone: z.string().regex(/^\d{10,15}$/),
+  /** Código do chat no Telegram (o bot mostra para quem ainda não está cadastrado). */
+  telegram: z.string().regex(/^-?\d+$/).optional(),
   planilhaId: z.string().min(10),
   abaFluxo: z.string().default("Cashflow"),
   abaCategorias: z.string().default("Contas"),
@@ -40,6 +42,10 @@ export function normalizarTelefone(tel: string): string {
 export function encontrarUsuario(telefone: string, usuarios = carregarUsuarios()): Usuario | undefined {
   const alvo = normalizarTelefone(telefone);
   return usuarios.find((u) => normalizarTelefone(u.telefone) === alvo);
+}
+
+export function encontrarUsuarioTelegram(chatId: string, usuarios = carregarUsuarios()): Usuario | undefined {
+  return usuarios.find((u) => u.telegram === chatId);
 }
 
 export function exigirEnv(nome: string): string {
