@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { responder, type Dependencias } from "@/lib/bot";
 import { RespostaGrandeDemais, type Classificacao } from "@/lib/classificador";
+import type { RespostaDaConversa } from "@/lib/conversa";
 import type { LinhaFluxo } from "@/lib/lancamentos";
 import type { LinhaExistente } from "@/lib/planilha";
 import type { Investimento, LinhaDoFluxo, Meta } from "@/lib/metas";
 import { categorias, usuario } from "./fixtures";
 
-function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [], extras: { fluxo?: LinhaDoFluxo[]; metas?: Meta[]; investimentos?: Investimento[] } = {}) {
+function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [], extras: { fluxo?: LinhaDoFluxo[]; metas?: Meta[]; investimentos?: Investimento[]; conversa?: RespostaDaConversa } = {}) {
   const gravadas: LinhaFluxo[] = [];
+  const falas: { quem: "eu" | "dino"; texto: string; proposta?: string }[] = [];
   const deps: Dependencias = {
     buscarContexto: vi.fn(async () => ({ categorias, exemplos: [] })),
     classificar: vi.fn(async () => classificacao!),
@@ -30,10 +32,18 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [],
     removerConta: vi.fn(async (_u: unknown, nome: string) => (nome.toLowerCase() === "inter" ? "Inter" : undefined)),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
+    lerConversa: vi.fn(async () => {
+      const ultima = falas.at(-1);
+      return { turnos: falas.map(({ quem, texto }) => ({ quem, texto })), ...(ultima?.quem === "dino" && ultima.proposta ? { proposta: ultima.proposta } : {}) };
+    }),
+    guardarTurnos: vi.fn(async (_u: unknown, turnos: { quem: "eu" | "dino"; texto: string; proposta?: string }[]) => {
+      falas.push(...turnos);
+    }),
+    conversar: vi.fn(async () => extras.conversa ?? { resposta: "Oi! Como posso ajudar?", lancamentos: [] }),
     baixarMidia: vi.fn(async () => ({ base64: "AAAA", mime: "image/jpeg" })),
     agora: () => new Date("2026-10-10T15:00:00Z"),
   };
-  return { deps, gravadas };
+  return { deps, gravadas, falas };
 }
 
 const texto = (t: string) => ({ id: "wamid.1", de: usuario.telefone, tipo: "texto" as const, texto: t });
@@ -299,5 +309,73 @@ describe("responder", () => {
   it("áudio recebe aviso educado", async () => {
     const { deps } = fakes();
     expect(await responder({ id: "w3", de: usuario.telefone, tipo: "audio", mediaId: "m" }, usuario, deps)).toContain("áudio");
+  });
+
+  describe("conversa", () => {
+    const anthropic = { data: "2026-10-10", despesa: "Lanches", descricao: "Assinatura Anthropic", nome: "Anthropic", pago_com: "Crédito", banco: "Nubank", valor: 26.85, natureza: "saida", parcelas: 1 };
+    const semLancamento: Classificacao = { resposta: "conversa", pergunta: "", lancamentos: [] };
+
+    it("conversa sobre os números sem gravar nada", async () => {
+      const { deps, gravadas, falas } = fakes(semLancamento, [], { conversa: { resposta: "Você gastou R$ 230 em mercado este mês.", lancamentos: [] } });
+      expect(await responder(texto("quanto gastei com mercado?"), usuario, deps)).toBe("Você gastou R$ 230 em mercado este mês.");
+      expect(gravadas).toHaveLength(0);
+      expect(deps.conversar).toHaveBeenCalledWith("quanto gastei com mercado?", [], expect.anything(), usuario, "2026-10-10", expect.stringContaining("Hoje é 2026-10-10"));
+      expect(falas.map((f) => f.quem)).toEqual(["eu", "dino"]);
+    });
+
+    it("mensagem que não é financeira também vira conversa, em vez da ajuda", async () => {
+      const { deps } = fakes({ resposta: "nao_financeiro", pergunta: "", lancamentos: [] });
+      expect(await responder(texto("você consegue conversar comigo?"), usuario, deps)).toBe("Oi! Como posso ajudar?");
+    });
+
+    it("propõe o lançamento e só grava depois do sim", async () => {
+      const { deps, gravadas, falas } = fakes(semLancamento, [], { conversa: { resposta: "Vou lançar R$ 26,85 da Anthropic no Nubank.", lancamentos: [anthropic] } });
+      const proposta = await responder(texto("descontou 26,85 da anthropic"), usuario, deps);
+      expect(proposta).toContain("Posso lançar?");
+      expect(gravadas).toHaveLength(0);
+      expect(falas.at(-1)?.proposta).toBeTruthy();
+
+      const feito = await responder({ ...texto("sim"), id: "wamid.2" }, usuario, deps);
+      expect(gravadas).toHaveLength(1);
+      expect(gravadas[0]).toMatchObject({ valor: -26.85, banco: "Nubank", pagoCom: "Crédito" });
+      expect(feito).toContain("R$ 26,85");
+      expect(deps.registrarNoLog).toHaveBeenCalledWith(usuario, "wamid.2", expect.anything(), expect.any(String));
+      expect(falas.at(-1)?.proposta).toBeUndefined();
+    });
+
+    it("não cancela a proposta sem gravar", async () => {
+      const { deps, gravadas } = fakes(semLancamento, [], { conversa: { resposta: "Vou lançar.", lancamentos: [anthropic] } });
+      await responder(texto("descontou 26,85 da anthropic"), usuario, deps);
+      expect(await responder({ ...texto("não"), id: "wamid.2" }, usuario, deps)).toContain("não lancei nada");
+      expect(gravadas).toHaveLength(0);
+      // Um "sim" depois do cancelamento não grava nada.
+      await responder({ ...texto("sim"), id: "wamid.3" }, usuario, deps);
+      expect(gravadas).toHaveLength(0);
+    });
+
+    it("com proposta pendente, outra fala ajusta a proposta pela conversa", async () => {
+      const { deps, gravadas } = fakes(semLancamento, [], { conversa: { resposta: "Vou lançar.", lancamentos: [anthropic] } });
+      await responder(texto("descontou 26,85 da anthropic"), usuario, deps);
+      deps.conversar = vi.fn(async () => ({ resposta: "Certo, no Itaú.", lancamentos: [{ ...anthropic, pago_com: "Pix", banco: "Itaú" }] }));
+      const r = await responder({ ...texto("foi no Itaú, no pix"), id: "wamid.2" }, usuario, deps);
+      expect(r).toContain("Posso lançar?");
+      expect(deps.classificar).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(deps.conversar).mock.calls[0][1]).toHaveLength(2);
+      await responder({ ...texto("sim"), id: "wamid.3" }, usuario, deps);
+      expect(gravadas).toHaveLength(1);
+      expect(gravadas[0]).toMatchObject({ banco: "Itaú", pagoCom: "Pix" });
+    });
+
+    it("sem proposta pendente, um \"sim\" solto segue o caminho normal", async () => {
+      const { deps, gravadas } = fakes({ resposta: "pergunta", pergunta: "Sim o quê?", lancamentos: [] });
+      expect(await responder(texto("sim"), usuario, deps)).toBe("Sim o quê?");
+      expect(gravadas).toHaveLength(0);
+    });
+
+    it("categoria inventada na proposta não vira proposta", async () => {
+      const { deps, falas } = fakes(semLancamento, [], { conversa: { resposta: "Vou lançar.", lancamentos: [{ ...anthropic, despesa: "Cripto" }] } });
+      expect(await responder(texto("comprei cripto 26,85"), usuario, deps)).toContain('categoria "Cripto"');
+      expect(falas.at(-1)?.proposta).toBeUndefined();
+    });
   });
 });
