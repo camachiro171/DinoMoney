@@ -22,12 +22,12 @@ export type Entrada =
   | { tipo: "imagem"; base64: string; mime: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; legenda?: string }
   | { tipo: "pdf"; base64: string; legenda?: string };
 
-export function montarLancamento(categorias: Categoria[], usuario: Usuario) {
+export function montarSchema(categorias: Categoria[], usuario: Usuario) {
   // O formato estruturado da API não força listas fechadas, então as opções vão na descrição
   // e conferimos a resposta depois (ver paraLinhas).
   const despesas = categorias.map((c) => c.despesa);
   const origens = [...usuario.contas, ...usuario.cartoes.map((c) => c.nome)];
-  return z.object({
+  const Lancamento = z.object({
     data: z.string().describe("Data da compra ou do pagamento, no formato AAAA-MM-DD"),
     despesa: z.string().describe(`Item exato da lista de categorias: ${despesas.join(" | ")}`),
     descricao: z.string().describe("O que foi, em poucas palavras"),
@@ -42,12 +42,8 @@ export function montarLancamento(categorias: Categoria[], usuario: Usuario) {
       .optional()
       .describe("Dia do mês em que se repete, se a pessoa disse que é todo mês (aluguel, salário, assinatura); 0 ou vazio se não"),
   });
-}
-
-export function montarSchema(categorias: Categoria[], usuario: Usuario) {
-  const Lancamento = montarLancamento(categorias, usuario);
   return z.object({
-    resposta: z.string().describe('"lancamentos", "pergunta", "conversa" ou "nao_financeiro"'),
+    resposta: z.string().describe('"lancamentos", "pergunta" ou "nao_financeiro"'),
     pergunta: z.string().describe("Pergunta curta para a pessoa quando faltar algo essencial; vazio se não houver"),
     lancamentos: z.array(Lancamento),
   });
@@ -81,7 +77,6 @@ Regras:
 - Sem data informada, use a data de hoje. Sem conta informada, use a primeira conta da lista. Sem forma de pagamento, use Pix.
 - Se faltar o valor, ou se não der para saber se foi gasto ou recebimento, responda "pergunta" com uma pergunta curta e lancamentos vazio.
 - Se a mensagem não tiver nada de financeiro (um "oi", por exemplo), responda "nao_financeiro".
-- Responda "conversa" (com lancamentos vazio) quando a pessoa faz uma pergunta ("quanto gastei com mercado?", "posso comprar isso?"), pede análise ou conselho, comenta ou reclama do próprio DinoMoney, ou mistura explicações, status e opiniões com um possível lançamento ("meu limite é 400, paguei tudo e descontou 26,85 da Anthropic"). "Lancamentos" só para mensagens que claramente relatam gastos ou recebimentos, como "café 6 no pix" ou um extrato.
 - Conta que se repete todo mês ("aluguel 2.357 todo dia 7", "salário cai dia 5", "Netflix todo mês"): preencha recorrente_dia com o dia. Em "data", use a data em que aconteceu; se a pessoa só está avisando de uma conta fixa que ainda vai vencer, use a próxima data de vencimento.
 - Na dúvida entre categorias parecidas, escolha a mais específica.`;
 }

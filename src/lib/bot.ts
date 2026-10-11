@@ -1,13 +1,12 @@
 import type { TipoConta } from "./cadastro";
 import { acharDespesa, gastosDoMes, type Investimento, type LinhaDoFluxo, type Meta } from "./metas";
 import { acharPrevisto, ehPrevisto, marcarPrevisto, MESES_PROJETADOS, projetar, resumirPrevisao, type Recorrente } from "./previsao";
-import { ehRenda, type Categoria } from "./categorias";
+import { ehRenda } from "./categorias";
 import type { Usuario } from "./config";
-import type { ContextoPlanilha, ConversaGuardada, Gravacao, LinhaExistente } from "./planilha";
-import { RecusaDaIA, RespostaGrandeDemais, montarLancamento, type Classificacao, type Entrada, type LancamentoClassificado } from "./classificador";
-import { retratoFinanceiro, type RespostaDaConversa, type Turno } from "./conversa";
+import type { ContextoPlanilha, Gravacao, LinhaExistente } from "./planilha";
+import { RecusaDaIA, RespostaGrandeDemais, type Classificacao, type Entrada } from "./classificador";
 import { hojeEmSaoPaulo, paraPlanilha } from "./datas";
-import { montarPainel, saldosPorConta } from "./painel";
+import { saldosPorConta } from "./painel";
 import { CategoriaDesconhecida, paraLinhas, resumir, tirarRepetidas, type LinhaFluxo } from "./lancamentos";
 import type { MensagemRecebida } from "./whatsapp";
 
@@ -31,9 +30,6 @@ export interface Dependencias {
   substituirPrevisto(u: Usuario, numeroLinha: number, linha: LinhaFluxo): Promise<void>;
   registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
-  lerConversa(u: Usuario, agora?: Date): Promise<ConversaGuardada>;
-  guardarTurnos(u: Usuario, turnos: { quem: "eu" | "dino"; texto: string; proposta?: string }[], agora?: Date): Promise<void>;
-  conversar(texto: string, historico: Turno[], contexto: ContextoPlanilha, u: Usuario, hoje: string, retrato: string): Promise<RespostaDaConversa>;
   baixarMidia(mediaId: string): Promise<{ base64: string; mime: string }>;
   agora?: () => Date;
 }
@@ -43,8 +39,6 @@ Me mande seus gastos e receitas que eu lanço na sua planilha:
 • Texto: "café 6 reais no pix" ou "mercado 230 no Nubank em 2x"
 • Foto do cupom, comprovante ou print do app do banco
 • PDF do extrato ou da fatura do cartão
-
-Também converso: pergunte "quanto gastei com mercado?" ou "posso comprar isso?" que eu respondo com os seus números. Se for algo a lançar, eu mostro e só gravo depois do seu *sim*.
 
 Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.
 Metas: *meta mercado 800* define, *metas* mostra como está o mês.
@@ -82,10 +76,6 @@ function tipoDaPalavra(palavra: string): TipoConta {
 
 const comparavel = (t: string) =>
   t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-
-/** "sim", "pode lançar", "isso mesmo"... : resposta curta a uma proposta do Dino. */
-const CONFIRMA = /^(?:sim|s|ss|claro|isso|isso mesmo|pode|pode sim|pode lan[cç]ar|pode ser|confirm\w*|ok|okay|certo|beleza|blz|bora|manda ver|lan[cç]a|lance|fechado|positivo)\s*[.!👍✅]*$/i;
-const NEGA = /^(?:n[aã]o|nao|n|nope|cancela\w*|deixa|deixa pra l[aá]|esquece|melhor n[aã]o|n[aã]o precisa)\s*[.!]*$/i;
 
 const IMAGENS = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 type MimeImagem = (typeof IMAGENS)[number];
@@ -296,153 +286,8 @@ function avisoDeRepetidas(puladas: LinhaFluxo[]): string {
   return [titulo, ...itens].join("\n");
 }
 
-/** Responde conversando, com os números do painel; se houver lançamento a fazer, guarda a proposta até o "sim". */
-async function conversarCom(
-  texto: string,
-  historico: Turno[],
-  usuario: Usuario,
-  deps: Dependencias,
-  hoje: string,
-): Promise<string> {
-  const contexto = await deps.buscarContexto(usuario);
-  const [fluxo, metas, investimentos] = await Promise.all([deps.lerFluxo(usuario), deps.lerMetas(usuario), deps.lerInvestimentos(usuario)]);
-  const retrato = retratoFinanceiro(montarPainel(fluxo, usuario, metas, hoje), fluxo, metas, investimentos);
-  const r = await deps.conversar(texto, historico, contexto, usuario, hoje, retrato);
-  let resposta = r.resposta.trim() || "Não sei responder isso agora. Pode perguntar de outro jeito?";
-  let proposta: string | undefined;
-  if (r.lancamentos.length > 0) {
-    try {
-      for (const l of r.lancamentos) paraLinhas(l, contexto.categorias, usuario, hoje);
-      proposta = JSON.stringify(r.lancamentos);
-      resposta += "\n\nPosso lançar? Responda *sim* para lançar ou *não* para cancelar.";
-    } catch (erro) {
-      if (!(erro instanceof CategoriaDesconhecida)) throw erro;
-      resposta += `\n\nNão achei a categoria "${erro.message}" na sua planilha, então ainda não dá para lançar. Em qual categoria entra?`;
-    }
-  }
-  await deps.guardarTurnos(usuario, [{ quem: "eu", texto }, { quem: "dino", texto: resposta, ...(proposta ? { proposta } : {}) }], deps.agora?.());
-  return resposta;
-}
-
-/** O "sim" a uma proposta: lança o que o Dino tinha mostrado. */
-async function confirmarProposta(
-  proposta: string,
-  texto: string,
-  msg: MensagemRecebida,
-  usuario: Usuario,
-  deps: Dependencias,
-  hoje: string,
-): Promise<string> {
-  const contexto = await deps.buscarContexto(usuario);
-  let lancamentos: LancamentoClassificado[] = [];
-  try {
-    const lido = montarLancamento(contexto.categorias, usuario).array().safeParse(JSON.parse(proposta));
-    if (lido.success) lancamentos = lido.data;
-  } catch {
-    // Proposta ilegível: cai na resposta abaixo.
-  }
-  const resposta =
-    lancamentos.length === 0
-      ? "Não consegui recuperar o que eu tinha proposto. Pode me mandar o lançamento de novo?"
-      : await lancar(lancamentos, true, msg.id, usuario, deps, hoje, contexto.categorias);
-  await deps.guardarTurnos(usuario, [{ quem: "eu", texto }, { quem: "dino", texto: resposta }], deps.agora?.());
-  return resposta;
-}
-
-/**
- * Grava no fluxo o que a IA entendeu: tira o que já estava lá, trata contas fixas e previstos,
- * cadastra contas novas e devolve o texto do resumo. Serve para lançamentos diretos e para os confirmados na conversa.
- */
-async function lancar(
-  lancamentos: LancamentoClassificado[],
-  ehTexto: boolean,
-  mensagemId: string,
-  usuario: Usuario,
-  deps: Dependencias,
-  hoje: string,
-  categorias: Categoria[],
-): Promise<string> {
-  let linhas: LinhaFluxo[][];
-  try {
-    linhas = lancamentos.map((l) => paraLinhas(l, categorias, usuario, hoje));
-  } catch (erro) {
-    if (erro instanceof CategoriaDesconhecida) {
-      return `Não achei a categoria "${erro.message}" na sua planilha. Pode me dizer em qual categoria entra?`;
-    }
-    throw erro;
-  }
-
-  // Fatura ou print do cartão: o que a pessoa já mandou antes (por foto, por exemplo) não entra de novo.
-  // Texto digitado fica de fora, porque duas compras iguais no mesmo dia podem ser de verdade.
-  let puladas: LinhaFluxo[] = [];
-  if (!ehTexto && linhas.flat().some((l) => l.pagoCom === "Crédito")) {
-    const filtrado = tirarRepetidas(linhas, await deps.lerComprasNoCartao(usuario));
-    puladas = filtrado.puladas;
-    lancamentos = lancamentos.filter((_, i) => filtrado.linhas[i].length > 0);
-    linhas = filtrado.linhas.filter((ls) => ls.length > 0);
-  }
-  if (linhas.length === 0) {
-    return puladas.length === 1
-      ? "Essa compra já estava na sua planilha, então não lancei de novo."
-      : `Essas ${puladas.length} compras já estavam na sua planilha, então não lancei de novo.`;
-  }
-
-  // Contas recorrentes geram os previstos dos próximos meses; gasto único com data futura vira previsto.
-  const recorrentes: string[] = [];
-  for (let i = 0; i < linhas.length; i++) {
-    const l = lancamentos[i];
-    const dia = Math.round(l.recorrente_dia ?? 0);
-    const [primeira] = linhas[i];
-    if (dia >= 1 && dia <= 31 && linhas[i].length === 1 && primeira.pagoCom !== "Crédito") {
-      linhas[i] = [marcarPrevisto(primeira, hoje), ...projetar(primeira, dia, hoje)];
-      await deps.cadastrarRecorrente(usuario, primeira, dia);
-      recorrentes.push(`🔁 *${primeira.descricao}* ficou como conta fixa todo dia ${dia}. Já deixei previsto até ${MESES_PROJETADOS} meses à frente.`);
-    } else if (linhas[i].length === 1 && primeira.pagoCom !== "Crédito") {
-      linhas[i] = [marcarPrevisto(primeira, hoje)];
-    }
-  }
-
-  // Lançamento real que corresponde a um previsto do mesmo mês toma o lugar dele, em vez de duplicar.
-  const fluxo = await deps.lerFluxo(usuario);
-  const previstos = fluxo.filter((p) => ehPrevisto(p.descricao));
-  const substituidas: number[] = [];
-  const paraGravar: LinhaFluxo[] = [];
-  for (const linha of linhas.flat()) {
-    const previsto = !ehPrevisto(linha.descricao) ? acharPrevisto(previstos, linha) : undefined;
-    if (previsto) {
-      await deps.substituirPrevisto(usuario, previsto.linha, linha);
-      substituidas.push(previsto.linha);
-      previstos.splice(previstos.indexOf(previsto), 1);
-      // Mantém a conta fixa prevista até o mesmo horizonte: entra mais um mês no fim.
-      const mesmos = previstos.filter((p) => p.despesa === previsto.despesa && p.descricao === previsto.descricao);
-      const ultimo = [previsto, ...mesmos].map((p) => p.data).sort().at(-1)!;
-      const dia = Number(previsto.data.slice(8, 10));
-      const [proximo] = projetar({ ...linha, dataISO: ultimo, descricao: previsto.descricao }, dia, ultimo).slice(0, 1);
-      if (proximo && (await ehRecorrente(previsto, usuario, deps))) paraGravar.push({ ...proximo, valor: previsto.valor });
-    } else {
-      paraGravar.push(linha);
-    }
-  }
-
-  const novas = await cadastrarNovas(linhas.flat(), usuario, deps);
-  const gravacao = paraGravar.length > 0 ? await deps.gravarNoFluxo(usuario, paraGravar) : { linhas: [], extras: false };
-  gravacao.linhas = [...substituidas, ...gravacao.linhas];
-  let texto = resumir(lancamentos, linhas);
-  if (substituidas.length > 0) {
-    texto += `\n\n✔️ ${substituidas.length === 1 ? "Esse lançamento substituiu o previsto" : `${substituidas.length} lançamentos substituíram os previstos`} do mês.`;
-  }
-  if (recorrentes.length > 0) texto += `\n\n${recorrentes.join("\n")}`;
-  const avisoMetas = await avisarMetas(linhas.flat(), usuario, deps, hoje);
-  if (avisoMetas) texto += `\n\n${avisoMetas}`;
-  if (puladas.length > 0) texto += `\n\n${avisoDeRepetidas(puladas)}`;
-  if (novas.length > 0) texto += `\n\n${avisoDeNovas(novas)}`;
-  await deps.registrarNoLog(usuario, mensagemId, gravacao, texto.split("\n")[1] ?? "");
-  return texto;
-}
-
 /** Processa uma mensagem e devolve o texto a responder no WhatsApp. */
 export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: Dependencias): Promise<string> {
-  let historico: Turno[] = [];
   if (msg.tipo === "texto") {
     const comando = msg.texto.trim().toLowerCase();
     if (["ajuda", "oi", "olá", "ola", "menu", "/start"].includes(comando)) return AJUDA;
@@ -505,19 +350,6 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
       const nome = await deps.definirCartao(usuario, cartao[1].trim(), fechamento, vencimento);
       return `💳 Pronto! Cartão *${nome}*: fecha dia ${fechamento}, vence dia ${vencimento}. As próximas compras nele entram no vencimento da fatura.`;
     }
-
-    // Conversa: um "sim" ou "não" responde à proposta pendente; outra fala com proposta pendente ajusta a proposta.
-    const conversa = await deps.lerConversa(usuario, deps.agora?.());
-    historico = conversa.turnos;
-    if (conversa.proposta) {
-      if (CONFIRMA.test(pedido)) return confirmarProposta(conversa.proposta, pedido, msg, usuario, deps, hojeCmd);
-      if (NEGA.test(pedido)) {
-        const resposta = "Tudo bem, não lancei nada. 👍";
-        await deps.guardarTurnos(usuario, [{ quem: "eu", texto: pedido }, { quem: "dino", texto: resposta }], deps.agora?.());
-        return resposta;
-      }
-      return conversarCom(pedido, historico, usuario, deps, hojeCmd);
-    }
   }
 
   const entrada = await paraEntrada(msg, deps);
@@ -539,13 +371,86 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
     throw erro;
   }
 
-  if (resultado.lancamentos.length === 0 && msg.tipo === "texto" && (resultado.resposta === "conversa" || resultado.resposta === "nao_financeiro")) {
-    return conversarCom(msg.texto.trim(), historico, usuario, deps, hoje);
-  }
   if (resultado.resposta === "nao_financeiro" && resultado.lancamentos.length === 0) return AJUDA;
   if (resultado.resposta === "pergunta" || resultado.lancamentos.length === 0) {
     return resultado.pergunta || "Não achei nenhum valor nessa mensagem. Quanto foi e em que você gastou?";
   }
 
-  return lancar(resultado.lancamentos, entrada.tipo === "texto", msg.id, usuario, deps, hoje, categorias);
+  let linhas: LinhaFluxo[][];
+  try {
+    linhas = resultado.lancamentos.map((l) => paraLinhas(l, categorias, usuario, hoje));
+  } catch (erro) {
+    if (erro instanceof CategoriaDesconhecida) {
+      return `Não achei a categoria "${erro.message}" na sua planilha. Pode me dizer em qual categoria entra?`;
+    }
+    throw erro;
+  }
+
+  // Fatura ou print do cartão: o que a pessoa já mandou antes (por foto, por exemplo) não entra de novo.
+  // Texto digitado fica de fora, porque duas compras iguais no mesmo dia podem ser de verdade.
+  let lancamentos = resultado.lancamentos;
+  let puladas: LinhaFluxo[] = [];
+  if (entrada.tipo !== "texto" && linhas.flat().some((l) => l.pagoCom === "Crédito")) {
+    const filtrado = tirarRepetidas(linhas, await deps.lerComprasNoCartao(usuario));
+    puladas = filtrado.puladas;
+    lancamentos = lancamentos.filter((_, i) => filtrado.linhas[i].length > 0);
+    linhas = filtrado.linhas.filter((ls) => ls.length > 0);
+  }
+  if (linhas.length === 0) {
+    return puladas.length === 1
+      ? "Essa compra já estava na sua planilha, então não lancei de novo."
+      : `Essas ${puladas.length} compras já estavam na sua planilha, então não lancei de novo.`;
+  }
+
+  // Contas recorrentes geram os previstos dos próximos meses; gasto único com data futura vira previsto.
+  const recorrentes: string[] = [];
+  for (let i = 0; i < linhas.length; i++) {
+    const l = lancamentos[i];
+    const dia = Math.round(l.recorrente_dia ?? 0);
+    const [primeira] = linhas[i];
+    if (dia >= 1 && dia <= 31 && linhas[i].length === 1 && primeira.pagoCom !== "Crédito") {
+      linhas[i] = [marcarPrevisto(primeira, hoje), ...projetar(primeira, dia, hoje)];
+      await deps.cadastrarRecorrente(usuario, primeira, dia);
+      recorrentes.push(`🔁 *${primeira.descricao}* ficou como conta fixa todo dia ${dia}. Já deixei previsto até ${MESES_PROJETADOS} meses à frente.`);
+    } else if (linhas[i].length === 1 && primeira.pagoCom !== "Crédito") {
+      linhas[i] = [marcarPrevisto(primeira, hoje)];
+    }
+  }
+
+  // Lançamento real que corresponde a um previsto do mesmo mês toma o lugar dele, em vez de duplicar.
+  const fluxo = await deps.lerFluxo(usuario);
+  const previstos = fluxo.filter((p) => ehPrevisto(p.descricao));
+  const substituidas: number[] = [];
+  const paraGravar: LinhaFluxo[] = [];
+  for (const linha of linhas.flat()) {
+    const previsto = !ehPrevisto(linha.descricao) ? acharPrevisto(previstos, linha) : undefined;
+    if (previsto) {
+      await deps.substituirPrevisto(usuario, previsto.linha, linha);
+      substituidas.push(previsto.linha);
+      previstos.splice(previstos.indexOf(previsto), 1);
+      // Mantém a conta fixa prevista até o mesmo horizonte: entra mais um mês no fim.
+      const mesmos = previstos.filter((p) => p.despesa === previsto.despesa && p.descricao === previsto.descricao);
+      const ultimo = [previsto, ...mesmos].map((p) => p.data).sort().at(-1)!;
+      const dia = Number(previsto.data.slice(8, 10));
+      const [proximo] = projetar({ ...linha, dataISO: ultimo, descricao: previsto.descricao }, dia, ultimo).slice(0, 1);
+      if (proximo && (await ehRecorrente(previsto, usuario, deps))) paraGravar.push({ ...proximo, valor: previsto.valor });
+    } else {
+      paraGravar.push(linha);
+    }
+  }
+
+  const novas = await cadastrarNovas(linhas.flat(), usuario, deps);
+  const gravacao = paraGravar.length > 0 ? await deps.gravarNoFluxo(usuario, paraGravar) : { linhas: [], extras: false };
+  gravacao.linhas = [...substituidas, ...gravacao.linhas];
+  let texto = resumir(lancamentos, linhas);
+  if (substituidas.length > 0) {
+    texto += `\n\n✔️ ${substituidas.length === 1 ? "Esse lançamento substituiu o previsto" : `${substituidas.length} lançamentos substituíram os previstos`} do mês.`;
+  }
+  if (recorrentes.length > 0) texto += `\n\n${recorrentes.join("\n")}`;
+  const avisoMetas = await avisarMetas(linhas.flat(), usuario, deps, hoje);
+  if (avisoMetas) texto += `\n\n${avisoMetas}`;
+  if (puladas.length > 0) texto += `\n\n${avisoDeRepetidas(puladas)}`;
+  if (novas.length > 0) texto += `\n\n${avisoDeNovas(novas)}`;
+  await deps.registrarNoLog(usuario, msg.id, gravacao, texto.split("\n")[1] ?? "");
+  return texto;
 }
