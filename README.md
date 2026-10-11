@@ -4,7 +4,7 @@ Gestão financeira pessoal pelo WhatsApp. A pessoa manda um texto, uma foto de c
 
 ## O que esta primeira versão faz
 
-- Recebe mensagens no WhatsApp (API oficial da Meta).
+- Recebe mensagens no WhatsApp (API oficial da Meta) ou pelo site, com login por código.
 - Entende **texto**, **foto/print** e **PDF** (extrato ou fatura com vários lançamentos de uma vez). Áudio ainda não.
 - Classifica usando as categorias da aba **Contas** da planilha de cada pessoa (Essencial / Necessária / Supérflua / Renda), mais as categorias próprias que a pessoa já usa no fluxo. Também olha os lançamentos recentes para repetir o jeito como ela classifica cada estabelecimento.
 - Grava na aba **Cashflow** da planilha Google da pessoa, logo abaixo do último lançamento, preenchendo DATA, DESPESA, Descrição, NOME, PAGO COM, Banco e VALOR. Se TIPO e CAIXA já têm fórmula, ficam como estão; se estão vazios, o robô preenche o TIPO e a fórmula do saldo acumulado.
@@ -48,6 +48,9 @@ Crie uma chave em https://platform.claude.com (API Keys) e guarde para o passo 5
 3. Em *Configurações do app > Básico* copie a **Chave secreta do app** (`WHATSAPP_APP_SECRET`).
 4. Invente uma senha qualquer para `WHATSAPP_VERIFY_TOKEN`.
 5. O token temporário expira em 24h. Para o piloto, gere um token permanente em *Configurações do negócio > Usuários do sistema*.
+
+### 3c. Site
+A página inicial do app é uma conversa igual à do WhatsApp: a pessoa entra com o código dela (campo `codigo` em `DINOMONEY_USUARIOS`), escreve o gasto ou anexa foto, print ou PDF (até 4 MB), e o lançamento vai para a planilha. Precisa da variável `DINOMONEY_SEGREDO_SESSAO` (uma senha longa qualquer).
 
 ### 4. Usuários do piloto
 Em `DINOMONEY_USUARIOS`, uma lista com cada pessoa: telefone, ID da planilha (o trecho da URL entre `/d/` e `/edit`), nome da aba do fluxo, contas e cartões. Veja o exemplo em `.env.example`.

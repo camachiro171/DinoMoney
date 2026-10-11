@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 
 const CartaoSchema = z.object({
@@ -12,6 +13,8 @@ const UsuarioSchema = z.object({
   nome: z.string().min(1),
   /** Número no formato internacional, só dígitos (ex.: 5511999998888). */
   telefone: z.string().regex(/^\d{10,15}$/),
+  /** Código de acesso ao site do DinoMoney (secreto, pelo menos 8 caracteres). */
+  codigo: z.string().min(8).optional(),
   planilhaId: z.string().min(10),
   abaFluxo: z.string().default("Cashflow"),
   abaCategorias: z.string().default("Contas"),
@@ -40,6 +43,18 @@ export function normalizarTelefone(tel: string): string {
 export function encontrarUsuario(telefone: string, usuarios = carregarUsuarios()): Usuario | undefined {
   const alvo = normalizarTelefone(telefone);
   return usuarios.find((u) => normalizarTelefone(u.telefone) === alvo);
+}
+
+function iguais(a: string, b: string) {
+  const ha = crypto.createHash("sha256").update(a).digest();
+  const hb = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+export function encontrarUsuarioPorCodigo(codigo: string, usuarios = carregarUsuarios()): Usuario | undefined {
+  const limpo = codigo.trim();
+  if (limpo.length < 8) return undefined;
+  return usuarios.find((u) => u.codigo !== undefined && iguais(u.codigo, limpo));
 }
 
 export function exigirEnv(nome: string): string {
