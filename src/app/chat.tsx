@@ -80,7 +80,10 @@ export function Chat({ nome }: { nome: string }) {
   const fim = useRef<HTMLDivElement>(null);
   const seletor = useRef<HTMLInputElement>(null);
 
-  useEffect(() => fim.current?.scrollIntoView({ behavior: "smooth" }), [mensagens]);
+  // Com chaves, o efeito não devolve nada: alguns navegadores devolvem algo de scrollIntoView e o React quebra ("u is not a function").
+  useEffect(() => {
+    fim.current?.scrollIntoView({ behavior: "smooth" });
+  }, [mensagens]);
 
   // Se a página foi fechada no meio de uma leitura, retoma de onde parou.
   useEffect(() => {
