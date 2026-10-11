@@ -26,6 +26,47 @@ async function prepararArquivo(arquivo: File): Promise<File> {
   return new File([blob], arquivo.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
 }
 
+const PENDENTE = "dino_pendente";
+const INTERVALO_MS = 3000;
+const ESPERA_MAXIMA_MS = 6 * 60 * 1000;
+
+function guardarPendente(id: string | null) {
+  try {
+    if (id) localStorage.setItem(PENDENTE, id);
+    else localStorage.removeItem(PENDENTE);
+  } catch {
+    // Sem armazenamento (aba anônima): só não dá para retomar depois de recarregar a página.
+  }
+}
+
+function lerPendente(): string | null {
+  try {
+    return localStorage.getItem(PENDENTE);
+  } catch {
+    return null;
+  }
+}
+
+/** Busca a resposta de um envio até ela ficar pronta. Quedas de conexão no meio só fazem tentar de novo. */
+async function aguardarResposta(id: string): Promise<string> {
+  const inicio = Date.now();
+  while (Date.now() - inicio < ESPERA_MAXIMA_MS) {
+    await new Promise((r) => setTimeout(r, INTERVALO_MS));
+    try {
+      const res = await fetch(`/api/chat?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (res.status === 401) {
+        window.location.reload();
+        return "";
+      }
+      const corpo = (await res.json()) as { estado?: string; resposta?: string };
+      if (corpo.estado === "pronto") return corpo.resposta ?? "";
+    } catch {
+      // Sem internet por um instante (ou o celular pausou a página); tenta de novo.
+    }
+  }
+  return "Está demorando mais que o normal. Confira na planilha daqui a pouco; se não aparecer, mande de novo.";
+}
+
 export function Chat({ nome }: { nome: string }) {
   const [mensagens, setMensagens] = useState<Mensagem[]>([
     {
@@ -40,6 +81,19 @@ export function Chat({ nome }: { nome: string }) {
   const seletor = useRef<HTMLInputElement>(null);
 
   useEffect(() => fim.current?.scrollIntoView({ behavior: "smooth" }), [mensagens]);
+
+  // Se a página foi fechada no meio de uma leitura, retoma de onde parou.
+  useEffect(() => {
+    const id = lerPendente();
+    if (!id) return;
+    setEnviando(true);
+    setMensagens((m) => [...m, { de: "dino", texto: "Ainda estou lendo o seu último envio...", esperando: true }]);
+    aguardarResposta(id).then((resposta) => {
+      guardarPendente(null);
+      setMensagens((m) => [...m.slice(0, -1), { de: "dino", texto: resposta }]);
+      setEnviando(false);
+    });
+  }, []);
 
   async function enviar(conteudo: string, anexo: File | null) {
     if (enviando || (!conteudo.trim() && !anexo)) return;
@@ -59,8 +113,9 @@ export function Chat({ nome }: { nome: string }) {
       if (pronto && pronto.size > LIMITE_BYTES) {
         resposta = "Esse arquivo é grande demais para mim (máximo 4 MB). Se for PDF, tente mandar só as páginas dos lançamentos.";
       } else {
+        const id = crypto.randomUUID();
         const form = new FormData();
-        form.set("id", crypto.randomUUID());
+        form.set("id", id);
         form.set("texto", conteudo);
         if (pronto) form.set("arquivo", pronto);
         const res = await fetch("/api/chat", { method: "POST", body: form });
@@ -68,10 +123,22 @@ export function Chat({ nome }: { nome: string }) {
           window.location.reload();
           return;
         }
-        resposta = ((await res.json().catch(() => ({}))) as { resposta?: string }).resposta ?? "Não consegui responder agora. Tente de novo.";
+        if (res.status === 413) {
+          resposta = "Esse arquivo é grande demais para mim (máximo 4 MB). Se for PDF, tente mandar só as páginas dos lançamentos.";
+        } else {
+          const corpo = (await res.json().catch(() => ({}))) as { estado?: string; resposta?: string };
+          if (corpo.estado === "lendo") {
+            guardarPendente(id);
+            resposta = await aguardarResposta(id);
+            guardarPendente(null);
+          } else {
+            resposta = corpo.resposta ?? `Não consegui responder agora (erro ${res.status}). Tente de novo.`;
+          }
+        }
       }
-    } catch {
-      resposta = "Não consegui enviar. Confira sua internet e tente de novo.";
+    } catch (erro) {
+      const detalhe = erro instanceof Error ? ` (${erro.message})` : "";
+      resposta = `Não consegui enviar. Confira sua internet e tente de novo.${detalhe}`;
     }
     setMensagens((m) => [...m.slice(0, -1), { de: "dino", texto: resposta }]);
     setEnviando(false);

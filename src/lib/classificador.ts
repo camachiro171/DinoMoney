@@ -80,6 +80,7 @@ function cliente(): Anthropic {
 }
 
 export class RecusaDaIA extends Error {}
+export class RespostaGrandeDemais extends Error {}
 
 export async function classificar(
   entrada: Entrada,
@@ -100,9 +101,10 @@ export async function classificar(
   }
   conteudo.push({ type: "text", text: `Hoje é ${hoje}.\nMensagem: ${texto}` });
 
-  const resposta = await cliente().messages.parse({
+  // Extratos longos geram respostas grandes: o streaming permite um limite de saída alto sem estourar o tempo da requisição.
+  const stream = cliente().messages.stream({
     model: process.env.CLAUDE_MODEL || "claude-opus-5-5",
-    max_tokens: 16000,
+    max_tokens: 64000,
     // Classificar é uma tarefa simples; esforço baixo deixa a resposta mais rápida.
     output_config: { effort: "low", format: zodOutputFormat(montarSchema(contexto.categorias, usuario)) },
     cache_control: { type: "ephemeral" },
@@ -110,7 +112,17 @@ export async function classificar(
     messages: [{ role: "user", content: conteudo }],
   });
 
+  let resposta;
+  try {
+    resposta = await stream.finalMessage();
+  } catch (erro) {
+    // Resposta cortada no limite chega como JSON incompleto e falha na leitura.
+    if (stream.currentMessage?.stop_reason === "max_tokens") throw new RespostaGrandeDemais("Resposta da IA passou do limite de tamanho");
+    throw erro;
+  }
+
   if (resposta.stop_reason === "refusal") throw new RecusaDaIA("A IA recusou a mensagem");
+  if (resposta.stop_reason === "max_tokens") throw new RespostaGrandeDemais("Resposta da IA passou do limite de tamanho");
   if (!resposta.parsed_output) throw new Error(`Resposta da IA sem conteúdo válido (stop_reason=${resposta.stop_reason})`);
   return resposta.parsed_output;
 }

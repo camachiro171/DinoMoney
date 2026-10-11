@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { responder, type Dependencias } from "@/lib/bot";
-import type { Classificacao } from "@/lib/classificador";
+import { RespostaGrandeDemais, type Classificacao } from "@/lib/classificador";
 import type { LinhaFluxo } from "@/lib/lancamentos";
 import { categorias, usuario } from "./fixtures";
 
@@ -42,6 +42,15 @@ describe("responder", () => {
   it("devolve a pergunta da IA quando falta informação, sem gravar", async () => {
     const { deps, gravadas } = fakes({ resposta: "pergunta", pergunta: "Quanto foi o mercado?", lancamentos: [] });
     expect(await responder(texto("fui no mercado"), usuario, deps)).toBe("Quanto foi o mercado?");
+    expect(gravadas).toHaveLength(0);
+  });
+
+  it("pede para dividir o arquivo quando a resposta da IA passa do limite", async () => {
+    const { deps, gravadas } = fakes();
+    deps.classificar = vi.fn(async () => {
+      throw new RespostaGrandeDemais("grande");
+    });
+    expect(await responder(texto("extrato"), usuario, deps)).toContain("partes menores");
     expect(gravadas).toHaveLength(0);
   });
 
