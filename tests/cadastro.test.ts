@@ -32,6 +32,7 @@ describe("lerMinhasContas", () => {
     ).toEqual({
       contas: ["Itaú", "Caixinha", "Bradesco"],
       cartoes: [{ nome: "Nubank", fechamento: 8, vencimento: 15, limite: 5000 }],
+      guardados: ["Caixinha"],
     });
   });
 });

@@ -57,8 +57,9 @@ export function lerMentorados(linhas: unknown[][]): Usuario[] {
 }
 
 /** Linhas da aba "Minhas contas" viram as contas e os cartões da pessoa. */
-export function lerMinhasContas(linhas: unknown[][]): { contas: string[]; cartoes: Cartao[] } {
+export function lerMinhasContas(linhas: unknown[][]): { contas: string[]; cartoes: Cartao[]; guardados: string[] } {
   const contas: string[] = [];
+  const guardados: string[] = [];
   const cartoes: Cartao[] = [];
   for (const l of linhas) {
     const nome = texto(l[0]);
@@ -74,9 +75,10 @@ export function lerMinhasContas(linhas: unknown[][]): { contas: string[]; cartoe
       else contas.push(nome);
     } else {
       contas.push(nome);
+      if (tipo.startsWith("invest")) guardados.push(nome);
     }
   }
-  return { contas, cartoes };
+  return { contas, cartoes, guardados };
 }
 
 const CACHE_MS = 60_000;
@@ -112,7 +114,7 @@ export async function prepararUsuario(usuario: Usuario): Promise<Usuario> {
       : titulos.includes("Categorias")
         ? "Categorias"
         : "Contas";
-  let { contas, cartoes } = usuario;
+  let { contas, cartoes, guardados } = usuario;
   if (titulos.includes(ABA_MINHAS_CONTAS)) {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: usuario.planilhaId,
@@ -120,9 +122,9 @@ export async function prepararUsuario(usuario: Usuario): Promise<Usuario> {
       valueRenderOption: "UNFORMATTED_VALUE",
     });
     const lidas = lerMinhasContas((res.data.values ?? []) as unknown[][]);
-    if (lidas.contas.length + lidas.cartoes.length > 0) ({ contas, cartoes } = lidas);
+    if (lidas.contas.length + lidas.cartoes.length > 0) ({ contas, cartoes, guardados } = lidas);
   }
-  return { ...usuario, abaCategorias, contas, cartoes };
+  return { ...usuario, abaCategorias, contas, cartoes, guardados: guardados ?? [] };
 }
 
 async function garantirAbaContas(usuario: Usuario): Promise<void> {

@@ -153,3 +153,21 @@ button, input, textarea { font: inherit; color: inherit; }
 .comparacao th:first-child, .comparacao td:first-child { text-align: left; white-space: normal; padding-left: 0; }
 .comparacao td small { display: block; font-size: 11px; color: var(--suave); }
 .comparacao tfoot td { font-weight: 700; }
+
+.subtitulo {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--suave);
+}
+
+.dica {
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--azul) 12%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
