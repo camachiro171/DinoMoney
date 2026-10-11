@@ -96,6 +96,8 @@ export interface Painel {
   cartoes: ResumoCartao[];
   dividas: Divida[];
   totalDividas: number;
+  parcelamentos: Divida[];
+  totalParcelamentos: number;
   gastos: {
     mes: string;
     mesAnterior: string;
@@ -112,8 +114,11 @@ const centavos = (v: number) => Math.round(v * 100) / 100;
 const somar = (xs: { valor: number }[]) => centavos(xs.reduce((s, x) => s + x.valor, 0));
 
 const ehCredito = (l: LinhaDoFluxo) => comparavel(l.pagoCom ?? "") === "credito";
-/** Previsão ainda não realizada: "[previsto]" na descrição ou "Previsão" em Pago com. */
-export const ehPrevista = (l: LinhaDoFluxo) => ehPrevisto(l.descricao) || comparavel(l.pagoCom ?? "").startsWith("previs");
+/** Marcada como "Atrasado" em Pago com: conta que venceu e ainda não foi paga. */
+const ehAtrasada = (l: LinhaDoFluxo) => comparavel(l.pagoCom ?? "").startsWith("atrasad");
+/** Ainda não aconteceu: "[previsto]" na descrição, ou "Previsão" ou "Atrasado" em Pago com. */
+export const ehPrevista = (l: LinhaDoFluxo) =>
+  ehPrevisto(l.descricao) || comparavel(l.pagoCom ?? "").startsWith("previs") || ehAtrasada(l);
 /** "Pagamento do cartão", "Pagamento da fatura", "Pag fatura Nubank". */
 const ehPagamentoDeCartao = (l: LinhaDoFluxo) =>
   l.valor < 0 && /\bpag\w*\s+(?:d[aoe]s?\s+)?(?:cart|fatura)/.test(comparavel(l.descricao));
@@ -344,7 +349,7 @@ export function contasAPagar(
     if (l.valor >= 0 || ehCredito(l) || !doBanco(l.banco, banco)) continue;
     if (separado && ehPagamentoDeCartao(l)) continue; // a fatura aparece pelo cartão
     const prevista = ehPrevista(l);
-    const atrasada = prevista && l.data < hoje;
+    const atrasada = ehAtrasada(l) || (prevista && l.data < hoje);
     const proxima = (l.data > hoje || (prevista && l.data === hoje)) && l.data <= limite;
     if (!atrasada && !proxima) continue;
     contas.push({
@@ -367,33 +372,44 @@ export function contasAPagar(
 const PARCELA = /(?<![\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/;
 const EMPRESTIMO = /empr[eé]stimo|financiamento|d[ií]vida|consignado/i;
 
-/** Dívidas: parcelas que ainda vão vencer, empréstimos e o que está em aberto nos cartões. */
-export function dividas(fluxo: LinhaDoFluxo[], hoje: DataISO, cartoes: ResumoCartao[], banco?: string): Divida[] {
-  const grupos = new Map<string, Divida>();
+/**
+ * O que ainda falta pagar, separado em dívidas (empréstimos, financiamentos, dívidas) e parcelamentos
+ * (compras e serviços em "n/N" parcelas, inclusive no cartão).
+ */
+export function compromissos(
+  fluxo: LinhaDoFluxo[],
+  hoje: DataISO,
+  banco?: string,
+): { dividas: Divida[]; parcelamentos: Divida[] } {
+  const dividas = new Map<string, Divida>();
+  const parcelamentos = new Map<string, Divida>();
   for (const l of fluxo) {
-    if (l.valor >= 0 || ehCredito(l) || !doBanco(l.banco, banco)) continue;
+    if (l.valor >= 0 || !doBanco(l.banco, banco)) continue;
     if (l.data <= hoje && !ehPrevista(l)) continue; // já pago
     const p = l.descricao.match(PARCELA);
-    const ehParcela = p && Number(p[1]) <= Number(p[2]) && Number(p[2]) >= 2;
-    if (!ehParcela && !EMPRESTIMO.test(`${l.despesa} ${l.descricao}`)) continue;
-    const nome = l.descricao
-      .replace(/^\s*\[previsto\]\s*/i, "")
-      .replace(PARCELA, "")
-      .replace(/\(\s*\)/g, "")
-      .replace(/^[\s\-–]+|[\s\-–]+$/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim() || l.despesa;
+    const ehParcela = !!p && Number(p[1]) <= Number(p[2]) && Number(p[2]) >= 2;
+    const ehDivida = EMPRESTIMO.test(`${l.despesa} ${l.descricao}`);
+    if (ehCredito(l) && !ehParcela) continue; // compra à vista no cartão aparece na fatura
+    if (!ehParcela && !ehDivida) continue;
+    const base =
+      l.descricao
+        .replace(/^\s*\[previsto\]\s*/i, "")
+        .replace(/\s*-\s*compra em .*$/i, "")
+        .replace(PARCELA, "")
+        .replace(/\(\s*\)/g, "")
+        .replace(/^[\s\-–]+|[\s\-–]+$/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim() || l.despesa;
+    const nome = ehCredito(l) ? `${base} (cartão)` : base;
+    const grupo = ehDivida ? dividas : parcelamentos;
     const k = comparavel(nome);
-    const g = grupos.get(k) ?? { nome, valor: 0, parcelas: 0 };
+    const g = grupo.get(k) ?? { nome, valor: 0, parcelas: 0 };
     g.valor = centavos(g.valor - l.valor);
     g.parcelas += 1;
-    grupos.set(k, g);
+    grupo.set(k, g);
   }
-  const lista = [...grupos.values()];
-  for (const c of cartoes) {
-    if (c.emAberto > 0 && doBanco(c.nome, banco)) lista.push({ nome: `Cartão ${c.nome} (a vencer)`, valor: c.emAberto, parcelas: 0 });
-  }
-  return lista.sort((a, b) => b.valor - a.valor);
+  const ordenar = (m: Map<string, Divida>) => [...m.values()].sort((a, b) => b.valor - a.valor);
+  return { dividas: ordenar(dividas), parcelamentos: ordenar(parcelamentos) };
 }
 
 /** Gastos por categoria no mês, comparados com o mês anterior. */
@@ -454,7 +470,7 @@ export function montarPainel(
   const movimentos = movimentosDeCaixa(fluxo, hoje, cartoes, separado, banco);
   const tempo = linhaDoTempo(movimentos, hoje, filtro.passado, filtro.futuro);
   const aPagar = contasAPagar(fluxo, hoje, cartoes, separado, banco);
-  const listaDividas = dividas(fluxo, hoje, cartoes, banco);
+  const { dividas, parcelamentos } = compromissos(fluxo, hoje, banco);
   const ultimoMes = fluxo.reduce((m, l) => (l.data.slice(0, 7) > m ? l.data.slice(0, 7) : m), mesAtual);
   const gastos = gastosComparados(fluxo, mes, metas, banco);
 
@@ -471,8 +487,10 @@ export function montarPainel(
     aPagar,
     totalAPagar: somar(aPagar),
     cartoes: banco ? cartoes.filter((c) => doBanco(c.nome, banco)) : cartoes,
-    dividas: listaDividas,
-    totalDividas: somar(listaDividas),
+    dividas,
+    totalDividas: somar(dividas),
+    parcelamentos,
+    totalParcelamentos: somar(parcelamentos),
     gastos: { ...gastos, ...(mes < ultimoMes ? { mesSeguinte: somarMeses(`${mes}-01`, 1).slice(0, 7) } : {}) },
   };
 }

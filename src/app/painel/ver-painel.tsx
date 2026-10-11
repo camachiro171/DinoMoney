@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Investimento } from "@/lib/metas";
-import { OPCOES_MESES, type Barra, type Filtro, type Painel } from "@/lib/painel";
+import { OPCOES_MESES, type Barra, type Divida, type Filtro, type Painel } from "@/lib/painel";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -101,6 +101,31 @@ function Chips({ f, campo, rotulo }: { f: Filtro; campo: "passado" | "futuro"; r
         </Link>
       ))}
     </div>
+  );
+}
+
+function Compromissos({ titulo, total, itens, vazio }: { titulo: string; total: number; itens: Divida[]; vazio: string }) {
+  return (
+    <section className="bloco">
+      <h2>{titulo}</h2>
+      <p className="destaque negativo">{reais(total)}</p>
+      {itens.length === 0 ? (
+        <p className="vazio">{vazio}</p>
+      ) : (
+        <ul className="lista">
+          {itens.map((d) => (
+            <li key={d.nome}>
+              <span>
+                {d.nome}
+                {d.parcelas > 1 && <small>faltam {d.parcelas} parcelas</small>}
+                {d.parcelas === 1 && <small>falta 1 parcela</small>}
+              </span>
+              <span>{reais(d.valor)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -271,7 +296,10 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
               <ul className="lista">
                 {investimentos.map((i) => (
                   <li key={i.nome}>
-                    <span>{i.nome}</span>
+                    <span>
+                      {i.nome}
+                      {(i.banco || i.tipo) && <small>{[i.tipo, i.banco].filter(Boolean).join(" · ")}</small>}
+                    </span>
                     <span className={i.valor < 0 ? "negativo" : ""}>{reais(i.valor)}</span>
                   </li>
                 ))}
@@ -281,25 +309,13 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
           )}
         </section>
 
-        <section className="bloco">
-          <h2>Dívidas</h2>
-          <p className="destaque negativo">{reais(p.totalDividas)}</p>
-          {p.dividas.length === 0 ? (
-            <p className="vazio">Nenhuma parcela, empréstimo ou fatura a vencer.</p>
-          ) : (
-            <ul className="lista">
-              {p.dividas.map((d) => (
-                <li key={d.nome}>
-                  <span>
-                    {d.nome}
-                    {d.parcelas > 1 && <small>{d.parcelas} parcelas</small>}
-                  </span>
-                  <span>{reais(d.valor)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <Compromissos titulo="Dívidas" total={p.totalDividas} itens={p.dividas} vazio="Nenhum empréstimo, financiamento ou dívida a pagar." />
+        <Compromissos
+          titulo="Parcelamentos"
+          total={p.totalParcelamentos}
+          itens={p.parcelamentos}
+          vazio="Nenhuma compra ou serviço parcelado a vencer."
+        />
       </div>
 
       <section className="bloco" id="gastos">

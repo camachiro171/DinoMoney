@@ -13,6 +13,7 @@ export const FORMAS_PAGAMENTO = [
   "Boleto",
   "Débito automático",
   "Transferência",
+  "Rendimento",
 ] as const;
 
 /** O que chegou pelo WhatsApp, já baixado. */
@@ -69,6 +70,7 @@ Regras:
 - Um extrato ou fatura pode ter muitos lançamentos: devolva todos, um por linha, e ignore saldos, totais e o próprio pagamento da fatura.
 - "valor" é sempre positivo; "natureza" diz se o dinheiro saiu ou entrou. Estornos e devoluções são "entrada" na mesma categoria do gasto original.
 - Transferência entre contas da própria pessoa, aplicação em cofrinho ou investimento e resgate não são gasto nem renda: use a categoria de transferência entre contas se existir; se não existir, pergunte. Quando as duas contas forem conhecidas, devolva dois lançamentos: a saída na conta de origem e a entrada na conta de destino, com o mesmo valor.
+- Rendimento de caixinha, cofrinho, poupança ou CDB (extrato ou print do app mostrando "rendimento", "rendeu", "juros"): natureza "entrada", pago_com "Rendimento", banco = onde o dinheiro está, despesa de renda passiva (rendimento/juros).
 - Compra no cartão de crédito: pago_com "Crédito" e banco = nome do cartão. Se a pessoa disser "em 3x", parcelas = 3, com valor = total da compra.
 - Descrições de extrato como "PAY PANIF", "PIX QRS UBER" ou "PAY OXXO": deduza o estabelecimento (panificadora, Uber, OXXO) e use-o em "nome".
 - Se a pessoa citar um banco, conta ou cartão que não está na lista, use em "banco" o nome que ela disse (ele será cadastrado). Não troque por outra conta da lista.

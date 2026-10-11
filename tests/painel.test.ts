@@ -83,12 +83,31 @@ describe("montarPainel (pagamento da fatura lançado à parte)", () => {
     expect(umMes.porDia).toBe(true);
   });
 
-  it("junta parcelas futuras e o cartão em aberto nas dívidas", () => {
-    expect(p.dividas).toEqual([
-      { nome: "Cartão Nubank (a vencer)", valor: 800, parcelas: 0 },
+  it("separa dívidas de parcelamentos", () => {
+    expect(p.dividas).toEqual([]);
+    expect(p.parcelamentos).toEqual([
       { nome: "Livro", valor: 723.34, parcelas: 2 },
       { nome: "Resgate", valor: 112.42, parcelas: 1 },
     ]);
+    const comEmprestimo = montarPainel(
+      [
+        ...comPagamento,
+        l("2026-10-27", -240, "Parcela de emprestimos", "Itaú", "Previsão", "Pagamento do emprestimo"),
+        l("2026-10-27", -239.52, "Custo de trabalho", "Itaú", "Previsão", "Dividas acumuladas 2/3"),
+        l("2026-11-15", -50, "Lanches", "Nubank", "Crédito", "Fone (2/3) - compra em 10/09/2026"),
+      ],
+      usuario,
+      [],
+      HOJE,
+    );
+    expect(comEmprestimo.dividas.map((d) => d.nome)).toEqual(["Pagamento do emprestimo", "Dividas acumuladas"]);
+    expect(comEmprestimo.parcelamentos.map((d) => d.nome)).toContain("Fone (cartão)");
+  });
+
+  it("trata 'Atrasado' em Pago com como conta atrasada, fora do saldo", () => {
+    const comStatus = montarPainel([...comPagamento, l("2026-10-10", -50, "Telefone", "Itaú", "Atrasado", "Internet")], usuario, [], HOJE);
+    expect(comStatus.saldoHoje).toBe(4760);
+    expect(comStatus.aPagar.filter((c) => c.atrasada).map((c) => c.descricao)).toEqual(["Resgate 10/12", "Internet"]);
   });
 
   it("compara os gastos com o mês anterior, sem transferências nem pagamento de fatura", () => {
@@ -124,11 +143,13 @@ describe("montarPainel (só as compras, como o Dino lança)", () => {
 });
 
 describe("investimentosDasLinhas", () => {
-  it("pega o ativo e o total atualizado, pulando linhas vazias", () => {
+  it("acha as colunas pelo cabeçalho e pula linhas vazias", () => {
     const linhas = [
-      ["", "", "Ações", "Ações", "", "", "", "R$ 0,00", "R$ 0,00"],
-      ["Cofrinho PicPay", "-", "Caixa", "Renda Fixa", 553.67, 605.45, 1, 553.67, 605.45],
+      ["", "Meta", "25%"],
+      ["Data de Compra", "Data de Venda", "Ativo", "Banco", "Ticker", "ARCA", "Tipo", "Valor de Compra", "Valor Atualizado", "Quantidade", "Total investido", "Total Atualizado"],
+      ["", "", "", "", "", "Ações", "Ações", "", "", "", "R$ 0,00", "R$ 0,00"],
+      ["11/10/2026", "", "Cofrinho PicPay", "PicPay", "-", "Caixa", "Cofrinhos", 553.67, 605.45, 1, 553.67, 605.45],
     ];
-    expect(investimentosDasLinhas(linhas)).toEqual([{ nome: "Cofrinho PicPay", valor: 605.45 }]);
+    expect(investimentosDasLinhas(linhas)).toEqual([{ nome: "Cofrinho PicPay", banco: "PicPay", tipo: "Cofrinhos", valor: 605.45 }]);
   });
 });
