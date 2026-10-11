@@ -10,7 +10,7 @@ const LIMITE_LINHAS = 5000;
 
 let clienteCache: sheets_v4.Sheets | undefined;
 
-function cliente(): sheets_v4.Sheets {
+export function cliente(): sheets_v4.Sheets {
   if (!clienteCache) {
     const credenciais = JSON.parse(exigirEnv("GOOGLE_SERVICE_ACCOUNT_JSON"));
     const auth = new google.auth.GoogleAuth({
@@ -22,7 +22,7 @@ function cliente(): sheets_v4.Sheets {
   return clienteCache;
 }
 
-function aba(nome: string): string {
+export function aba(nome: string): string {
   return `'${nome.replace(/'/g, "''")}'`;
 }
 

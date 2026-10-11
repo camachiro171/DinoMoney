@@ -1,7 +1,8 @@
 import { after, NextResponse } from "next/server";
 import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
-import { encontrarUsuario, exigirEnv } from "@/lib/config";
+import { cadastrarConta, definirCartao, encontrarUsuarioCadastrado, prepararUsuario } from "@/lib/cadastro";
+import { exigirEnv } from "@/lib/config";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, jaProcessada, registrarNoLog } from "@/lib/planilha";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
@@ -19,18 +20,21 @@ export function GET(req: Request) {
 }
 
 async function processar(msg: MensagemRecebida) {
-  const usuario = encontrarUsuario(msg.de);
-  if (!usuario) {
+  const cadastrado = await encontrarUsuarioCadastrado(msg.de);
+  if (!cadastrado) {
     await enviarTexto(msg.de, "Oi! Este número ainda não está cadastrado no DinoMoney. Fale com seu mentor para liberar o acesso.");
     return;
   }
-  if (await jaProcessada(usuario, msg.id)) return;
+  if (await jaProcessada(cadastrado, msg.id)) return;
   try {
+    const usuario = await prepararUsuario(cadastrado);
     const texto = await responder(msg, usuario, {
       buscarContexto,
       classificar,
       gravarNoFluxo,
       lerComprasNoCartao,
+      cadastrarConta,
+      definirCartao,
       registrarNoLog,
       desfazerUltimo,
       baixarMidia,

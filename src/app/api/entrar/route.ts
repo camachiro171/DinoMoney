@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { encontrarUsuarioPorCodigo, exigirEnv } from "@/lib/config";
+import { encontrarUsuarioPeloCodigo } from "@/lib/cadastro";
+import { exigirEnv } from "@/lib/config";
 import { COOKIE_SESSAO, DIAS_DE_SESSAO, criarSessao } from "@/lib/sessao";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   const { codigo } = (await req.json().catch(() => ({}))) as { codigo?: string };
-  const usuario = codigo ? encontrarUsuarioPorCodigo(codigo) : undefined;
+  const usuario = codigo ? await encontrarUsuarioPeloCodigo(codigo) : undefined;
   if (!usuario) {
     // Uma pequena espera deixa tentativas em sequência bem mais lentas.
     await new Promise((r) => setTimeout(r, 800));

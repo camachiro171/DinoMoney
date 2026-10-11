@@ -32,7 +32,7 @@ export function montarSchema(categorias: Categoria[], usuario: Usuario) {
     descricao: z.string().describe("O que foi, em poucas palavras"),
     nome: z.string().describe("Estabelecimento ou pessoa (quem recebeu ou quem pagou)"),
     pago_com: z.string().describe(`Uma destas: ${FORMAS_PAGAMENTO.join(" | ")}`),
-    banco: z.string().describe(`Conta ou cartão usado, um destes: ${origens.join(" | ")}`),
+    banco: z.string().describe(`Conta ou cartão usado: ${origens.join(" | ")}, ou o nome de uma conta nova que a pessoa citou`),
     valor: z.number().describe("Valor total, sempre positivo, em reais"),
     natureza: z.string().describe('"saida" ou "entrada"'),
     parcelas: z.number().describe("Número de parcelas; 1 se à vista"),
@@ -58,7 +58,7 @@ Sua tarefa é extrair cada lançamento e classificá-lo numa das categorias abai
 Categorias (Grupo > Tipo > Despesa). Use no campo "despesa" exatamente um dos itens:
 ${descreverCategorias(categorias)}
 
-${exemplos.length ? `Como ${usuario.nome} costuma classificar (estabelecimento → despesa). Siga esse padrão quando o estabelecimento ou o tipo de gasto se repetir:\n${exemplos.join("\n")}\n\n` : ""}Contas de ${usuario.nome}: ${usuario.contas.join(", ")}.
+${exemplos.length ? `Como ${usuario.nome} costuma classificar (estabelecimento → despesa). Siga esse padrão quando o estabelecimento ou o tipo de gasto se repetir:\n${exemplos.join("\n")}\n\n` : ""}Contas de ${usuario.nome}: ${usuario.contas.join(", ") || "nenhuma cadastrada"}.
 Cartões de crédito: ${cartoes}.
 
 Regras:
@@ -67,6 +67,7 @@ Regras:
 - Transferência entre contas da própria pessoa, aplicação em cofrinho ou investimento e resgate não são gasto nem renda: use a categoria de transferência entre contas se existir; se não existir, pergunte. Quando as duas contas forem conhecidas, devolva dois lançamentos: a saída na conta de origem e a entrada na conta de destino, com o mesmo valor.
 - Compra no cartão de crédito: pago_com "Crédito" e banco = nome do cartão. Se a pessoa disser "em 3x", parcelas = 3, com valor = total da compra.
 - Descrições de extrato como "PAY PANIF", "PIX QRS UBER" ou "PAY OXXO": deduza o estabelecimento (panificadora, Uber, OXXO) e use-o em "nome".
+- Se a pessoa citar um banco, conta ou cartão que não está na lista, use em "banco" o nome que ela disse (ele será cadastrado). Não troque por outra conta da lista.
 - Sem data informada, use a data de hoje. Sem conta informada, use a primeira conta da lista. Sem forma de pagamento, use Pix.
 - Se faltar o valor, ou se não der para saber se foi gasto ou recebimento, responda "pergunta" com uma pergunta curta e lancamentos vazio.
 - Se a mensagem não tiver nada de financeiro (um "oi", por exemplo), responda "nao_financeiro".

@@ -4,6 +4,7 @@ import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, lerResposta, registrarNoLog, salvarResposta } from "@/lib/planilha";
 import { mensagemDoSite } from "@/lib/web";
+import { cadastrarConta, definirCartao, prepararUsuario } from "@/lib/cadastro";
 
 export const runtime = "nodejs";
 // Ler um extrato inteiro pode levar um tempo
@@ -36,11 +37,13 @@ export async function POST(req: Request) {
   after(async () => {
     let resposta: string;
     try {
-      resposta = await responder(msg, usuario, {
+      resposta = await responder(msg, await prepararUsuario(usuario), {
         buscarContexto,
         classificar,
         gravarNoFluxo,
         lerComprasNoCartao,
+        cadastrarConta,
+        definirCartao,
         registrarNoLog,
         desfazerUltimo,
         baixarMidia,
