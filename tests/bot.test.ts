@@ -17,6 +17,7 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [])
     lerComprasNoCartao: vi.fn(async () => existentes),
     cadastrarConta: vi.fn(async () => {}),
     definirCartao: vi.fn(async (_u: unknown, nome: string) => nome),
+    removerConta: vi.fn(async (_u: unknown, nome: string) => (nome.toLowerCase() === "inter" ? "Inter" : undefined)),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
     baixarMidia: vi.fn(async () => ({ base64: "AAAA", mime: "image/jpeg" })),
@@ -117,6 +118,43 @@ describe("responder", () => {
     expect(deps.definirCartao).toHaveBeenCalledWith(usuario, "Bradesco", 5, 12);
     expect(deps.classificar).not.toHaveBeenCalled();
     expect(r).toContain("fecha dia 5, vence dia 12");
+  });
+
+  describe("contas pela conversa", () => {
+    it("lista contas e cartões", async () => {
+      const { deps } = fakes();
+      const r = await responder(texto("minhas contas"), usuario, deps);
+      expect(r).toContain("• Itaú");
+      expect(r).toContain("Nubank (fecha dia 3, vence dia 10)");
+      expect(deps.classificar).not.toHaveBeenCalled();
+    });
+
+    it("cadastra conta nova e não repete uma que já existe", async () => {
+      const { deps } = fakes();
+      expect(await responder(texto("nova conta Bradesco"), usuario, deps)).toContain("Cadastrei a conta *Bradesco*");
+      expect(deps.cadastrarConta).toHaveBeenCalledWith(usuario, "Bradesco", "Conta");
+      expect(await responder(texto("nova conta itaú"), usuario, deps)).toContain("já está");
+      expect(deps.cadastrarConta).toHaveBeenCalledTimes(1);
+    });
+
+    it("cadastra caixinha como investimento", async () => {
+      const { deps } = fakes();
+      await responder(texto("nova caixinha Nubank Turbo"), usuario, deps);
+      expect(deps.cadastrarConta).toHaveBeenCalledWith(usuario, "Nubank Turbo", "Investimento");
+    });
+
+    it("novo cartão com fechamento e vencimento", async () => {
+      const { deps } = fakes();
+      await responder(texto("novo cartão Itaú Click fecha 2 vence 9"), usuario, deps);
+      expect(deps.definirCartao).toHaveBeenCalledWith(usuario, "Itaú Click", 2, 9);
+    });
+
+    it("remove conta e avisa quando não acha", async () => {
+      const { deps } = fakes();
+      expect(await responder(texto("remover conta inter"), usuario, deps)).toContain("Tirei *Inter*");
+      expect(deps.removerConta).toHaveBeenCalledWith(usuario, "inter", "Conta");
+      expect(await responder(texto("apagar cartão XP"), usuario, deps)).toContain("Não achei *XP*");
+    });
   });
 
   it("desfazer apaga o último envio sem chamar a IA", async () => {

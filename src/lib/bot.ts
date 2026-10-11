@@ -14,6 +14,7 @@ export interface Dependencias {
   lerComprasNoCartao(u: Usuario): Promise<LinhaExistente[]>;
   cadastrarConta(u: Usuario, nome: string, tipo: TipoConta): Promise<void>;
   definirCartao(u: Usuario, nome: string, fechamento: number, vencimento: number): Promise<string>;
+  removerConta(u: Usuario, nome: string, tipo?: TipoConta): Promise<string | undefined>;
   registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
   baixarMidia(mediaId: string): Promise<{ base64: string; mime: string }>;
@@ -27,10 +28,21 @@ Me mande seus gastos e receitas que eu lanço na sua planilha:
 • PDF do extrato ou da fatura do cartão
 
 Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.
-Cartão novo? Me diga o fechamento e o vencimento: *Nubank fecha 3 vence 10*.`;
+Suas contas: *minhas contas* mostra a lista, *nova conta Inter* cadastra, *novo cartão Nubank fecha 3 vence 10* cadastra um cartão e *remover conta Inter* tira da lista.`;
 
 /** "Nubank fecha 3 vence 10", "Inter fecha dia 5 e vence dia 12". */
-const COMANDO_CARTAO = /^(.+?)\s+fecha\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*(?:,|e)?\s*vence\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*\.?$/i;
+const COMANDO_CARTAO = /^(?:(?:novo|adicionar|cadastrar)\s+)?(?:o\s+)?(?:cart[aã]o\s+)?(.+?)\s+fecha\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*(?:,|e)?\s*vence\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*\.?$/i;
+
+const COMANDO_LISTAR = /^(?:minhas|meus|ver|listar)?\s*(?:contas|cart[oõ]es|contas e cart[oõ]es)\??$/i;
+const COMANDO_NOVA = /^(?:nova|novo|adicionar|cadastrar|criar)\s+(?:a\s+|o\s+)?(conta|investimento|caixinha|cofrinho)\s+(.+)$/i;
+const COMANDO_REMOVER = /^(?:remover|apagar|excluir|tirar|deletar)\s+(?:a\s+|o\s+)?(conta|cart[aã]o|investimento|caixinha|cofrinho)\s+(.+)$/i;
+
+function tipoDaPalavra(palavra: string): TipoConta {
+  const p = palavra.toLowerCase();
+  if (p.startsWith("cart")) return "Cartão";
+  if (p === "conta") return "Conta";
+  return "Investimento";
+}
 
 const comparavel = (t: string) =>
   t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -61,6 +73,20 @@ async function paraEntrada(msg: MensagemRecebida, deps: Dependencias): Promise<E
     default:
       return "Não entendi esse tipo de mensagem. Me mande um texto, uma foto, um print ou o PDF do extrato.";
   }
+}
+
+function listarContas(usuario: Usuario): string {
+  const linhas = [
+    ...usuario.contas.map((c) => `• ${c}`),
+    ...usuario.cartoes.map((c) => `• 💳 ${c.nome} (fecha dia ${c.fechamento}, vence dia ${c.vencimento})`),
+  ];
+  if (linhas.length === 0) return "Você ainda não tem contas cadastradas. Mande, por exemplo, *nova conta Nubank*.";
+  return [
+    "Suas contas e cartões:",
+    ...linhas,
+    "",
+    "Para mudar: *nova conta Inter*, *novo cartão Nubank fecha 3 vence 10* ou *remover conta Inter*.",
+  ].join("\n");
 }
 
 /** Conta ou cartão que apareceu no lançamento e ainda não estava em "Minhas contas": cadastra. */
@@ -110,7 +136,27 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
         ? "Não encontrei nenhum lançamento meu para desfazer."
         : `↩️ Pronto, apaguei ${n === 1 ? "o último lançamento" : `as ${n} linhas do último envio`}.`;
     }
-    const cartao = msg.texto.trim().match(COMANDO_CARTAO);
+    const pedido = msg.texto.trim();
+    if (COMANDO_LISTAR.test(pedido)) return listarContas(usuario);
+    const nova = pedido.match(COMANDO_NOVA);
+    if (nova) {
+      const nome = nova[2].trim();
+      const tipo = tipoDaPalavra(nova[1]);
+      if ([...usuario.contas, ...usuario.cartoes.map((c) => c.nome)].some((c) => comparavel(c) === comparavel(nome))) {
+        return `*${nome}* já está nas suas contas. Mande *minhas contas* para ver a lista.`;
+      }
+      await deps.cadastrarConta(usuario, nome, tipo);
+      return `🆕 Pronto! Cadastrei ${tipo === "Investimento" ? "o investimento" : "a conta"} *${nome}*.`;
+    }
+    const remover = pedido.match(COMANDO_REMOVER);
+    if (remover) {
+      const nome = remover[2].trim();
+      const removida = await deps.removerConta(usuario, nome, tipoDaPalavra(remover[1]));
+      return removida
+        ? `🗑️ Tirei *${removida}* das suas contas. Os lançamentos que já estão na planilha continuam lá.`
+        : `Não achei *${nome}* nas suas contas. Mande *minhas contas* para ver a lista.`;
+    }
+    const cartao = pedido.match(COMANDO_CARTAO);
     if (cartao) {
       const [fechamento, vencimento] = [Number(cartao[2]), Number(cartao[3])];
       if (fechamento < 1 || fechamento > 31 || vencimento < 1 || vencimento > 31) {

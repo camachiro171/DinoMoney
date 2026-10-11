@@ -192,3 +192,32 @@ export async function encontrarUsuarioCadastrado(telefone: string): Promise<Usua
 export async function encontrarUsuarioPeloCodigo(codigo: string): Promise<Usuario | undefined> {
   return encontrarUsuarioPorCodigo(codigo, await listarUsuarios());
 }
+
+/**
+ * Apaga da aba "Minhas contas" a linha com esse nome (e desse tipo, se informado).
+ * Devolve o nome como estava na planilha, ou undefined se não achou.
+ */
+export async function removerConta(usuario: Usuario, nome: string, tipo?: TipoConta): Promise<string | undefined> {
+  const sheets = cliente();
+  const info = await sheets.spreadsheets.get({ spreadsheetId: usuario.planilhaId, fields: "sheets.properties" });
+  const sheetId = info.data.sheets?.find((s) => s.properties?.title === ABA_MINHAS_CONTAS)?.properties?.sheetId;
+  if (sheetId === undefined || sheetId === null) return undefined;
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: usuario.planilhaId,
+    range: `${aba(ABA_MINHAS_CONTAS)}!A2:B`,
+  });
+  const linhas = (res.data.values ?? []) as unknown[][];
+  const i = linhas.findIndex(
+    (l) =>
+      comparavel(texto(l[0])) === comparavel(nome) &&
+      (!tipo || comparavel(texto(l[1])).startsWith(comparavel(tipo).slice(0, 4))),
+  );
+  if (i < 0) return undefined;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: usuario.planilhaId,
+    requestBody: {
+      requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: i + 1, endIndex: i + 2 } } }],
+    },
+  });
+  return texto(linhas[i][0]);
+}
