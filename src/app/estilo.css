@@ -162,3 +162,12 @@ button, input, textarea { font: inherit; color: inherit; }
   font-weight: 600;
   color: var(--suave);
 }
+
+.dica {
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--azul) 12%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}

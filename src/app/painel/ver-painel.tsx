@@ -155,6 +155,7 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
   const hojeIndice = p.barras.findIndex((b) => b.futuro) - 1;
   const guardados = p.saldos.filter((s) => s.guardado);
   const nasContas = p.saldos.filter((s) => !s.guardado);
+  const parado = nasContas.reduce((t, s) => t + Math.max(0, s.valor), 0);
   const totalInvestido = investimentos?.reduce((s, i) => s + i.valor, 0) ?? 0;
   const atrasadas = p.aPagar.filter((c) => c.atrasada);
 
@@ -262,11 +263,16 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
           {guardados.length > 0 ? (
             <>
               <ListaDeSaldos titulo="Nas contas" saldos={nasContas} />
-              <ListaDeSaldos titulo="Guardado em caixinhas e cofrinhos" saldos={guardados} />
-              <p className="vazio">O guardado conta como dinheiro disponível, porque pode ser resgatado na hora.</p>
+              <ListaDeSaldos titulo="Reserva de gastos (rendendo)" saldos={guardados} />
+              <p className="vazio">A reserva conta como dinheiro disponível, porque pode ser resgatada na hora de pagar.</p>
             </>
           ) : (
             <ListaDeSaldos saldos={p.saldos} />
+          )}
+          {parado > 0.009 && (
+            <p className="dica">
+              💡 {reais(parado)} parado nas contas sem render. Guarde numa caixinha ou cofrinho e resgate só na hora de pagar.
+            </p>
           )}
         </section>
 
@@ -330,7 +336,7 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
               </ul>
               <p className="vazio">
                 Valor atualizado da aba Investimentos.
-                {guardados.length > 0 ? " Caixinhas e cofrinhos aparecem também em Saldos de hoje." : " Não entra no saldo acima."}
+                {guardados.length > 0 ? " Caixinhas e cofrinhos aparecem também na reserva de gastos." : " Não entra no saldo acima."}
               </p>
             </>
           )}
