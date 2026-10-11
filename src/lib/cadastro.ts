@@ -6,6 +6,7 @@ import {
   type Cartao,
   type Usuario,
 } from "./config";
+import { numeroBR } from "./metas";
 import { aba, cliente } from "./planilha";
 
 /**
@@ -18,7 +19,7 @@ import { aba, cliente } from "./planilha";
 export const ABA_MENTORADOS = "Mentorados";
 export const ABA_MINHAS_CONTAS = "Minhas contas";
 export const CABECALHO_MENTORADOS = ["Nome", "Telefone", "Código de acesso", "Planilha (link ou ID)", "Ativo"];
-export const CABECALHO_CONTAS = ["Nome", "Tipo", "Fechamento da fatura (dia)", "Vencimento da fatura (dia)"];
+export const CABECALHO_CONTAS = ["Nome", "Tipo", "Fechamento da fatura (dia)", "Vencimento da fatura (dia)", "Limite"];
 
 export type TipoConta = "Conta" | "Cartão" | "Investimento";
 
@@ -68,7 +69,8 @@ export function lerMinhasContas(linhas: unknown[][]): { contas: string[]; cartoe
       const vencimento = Number(texto(l[3]));
       const dia = (n: number) => Number.isInteger(n) && n >= 1 && n <= 31;
       // Cartão sem os dias da fatura ainda é uma origem válida; só não dá para calcular o vencimento.
-      if (dia(fechamento) && dia(vencimento)) cartoes.push({ nome, fechamento, vencimento });
+      const limite = Math.abs(numeroBR(l[4]));
+      if (dia(fechamento) && dia(vencimento)) cartoes.push({ nome, fechamento, vencimento, ...(limite > 0 ? { limite } : {}) });
       else contas.push(nome);
     } else {
       contas.push(nome);
@@ -114,7 +116,8 @@ export async function prepararUsuario(usuario: Usuario): Promise<Usuario> {
   if (titulos.includes(ABA_MINHAS_CONTAS)) {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: usuario.planilhaId,
-      range: `${aba(ABA_MINHAS_CONTAS)}!A2:D`,
+      range: `${aba(ABA_MINHAS_CONTAS)}!A2:E`,
+      valueRenderOption: "UNFORMATTED_VALUE",
     });
     const lidas = lerMinhasContas((res.data.values ?? []) as unknown[][]);
     if (lidas.contas.length + lidas.cartoes.length > 0) ({ contas, cartoes } = lidas);
@@ -133,7 +136,7 @@ async function garantirAbaContas(usuario: Usuario): Promise<void> {
   // Quem tinha as contas só em DINOMONEY_USUARIOS ganha a aba já preenchida.
   const atuais = [
     ...usuario.contas.map((c) => [c, "Conta", "", ""]),
-    ...usuario.cartoes.map((c) => [c.nome, "Cartão", c.fechamento, c.vencimento]),
+    ...usuario.cartoes.map((c) => [c.nome, "Cartão", c.fechamento, c.vencimento, c.limite ?? ""]),
   ];
   await sheets.spreadsheets.values.update({
     spreadsheetId: usuario.planilhaId,
@@ -183,6 +186,42 @@ export async function definirCartao(usuario: Usuario, nome: string, fechamento: 
     });
   }
   return linha[0] as string;
+}
+
+/**
+ * Grava o limite de um cartão já cadastrado (coluna E da aba "Minhas contas").
+ * Devolve o nome como está na planilha, ou undefined se o cartão não existe.
+ */
+export async function definirLimite(usuario: Usuario, nome: string, limite: number): Promise<string | undefined> {
+  await garantirAbaContas(usuario);
+  const sheets = cliente();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: usuario.planilhaId,
+    range: `${aba(ABA_MINHAS_CONTAS)}!A1:B`,
+  });
+  const linhas = (res.data.values ?? []) as unknown[][];
+  const ehCartao = (l: unknown[]) => comparavel(texto(l[1])).startsWith("cart");
+  const alvo = comparavel(nome);
+  // Nome exato primeiro; senão, o único cartão cujo nome contém o que a pessoa escreveu ("limite nubank").
+  let i = linhas.findIndex((l, k) => k > 0 && ehCartao(l) && comparavel(texto(l[0])) === alvo);
+  if (i < 0) {
+    const parecidos = linhas.map((l, k) => ({ l, k })).filter(({ l, k }) => k > 0 && ehCartao(l) && comparavel(texto(l[0])).includes(alvo));
+    if (parecidos.length === 1) i = parecidos[0].k;
+  }
+  if (i < 1) return undefined;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: usuario.planilhaId,
+    range: `${aba(ABA_MINHAS_CONTAS)}!E1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [["Limite"]] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: usuario.planilhaId,
+    range: `${aba(ABA_MINHAS_CONTAS)}!E${i + 1}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[limite]] },
+  });
+  return texto(linhas[i][0]);
 }
 
 export async function encontrarUsuarioCadastrado(telefone: string): Promise<Usuario | undefined> {

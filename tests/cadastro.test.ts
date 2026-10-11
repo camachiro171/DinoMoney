@@ -24,14 +24,14 @@ describe("lerMinhasContas", () => {
     expect(
       lerMinhasContas([
         ["Itaú", "Conta"],
-        ["Nubank", "Cartão", "8", "15"],
+        ["Nubank", "Cartão", "8", "15", "R$ 5.000,00"],
         ["Caixinha", "Investimento"],
         ["Bradesco", "cartao", "", ""],
         ["", "Conta"],
       ]),
     ).toEqual({
       contas: ["Itaú", "Caixinha", "Bradesco"],
-      cartoes: [{ nome: "Nubank", fechamento: 8, vencimento: 15 }],
+      cartoes: [{ nome: "Nubank", fechamento: 8, vencimento: 15, limite: 5000 }],
     });
   });
 });

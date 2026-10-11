@@ -19,6 +19,10 @@ export interface LinhaDoFluxo {
   despesa: string;
   descricao: string;
   valor: number;
+  /** Colunas que só o painel usa. */
+  tipo?: string;
+  pagoCom?: string;
+  banco?: string;
 }
 
 const comparavel = (t: string) =>
@@ -106,6 +110,9 @@ export async function lerFluxo(usuario: Usuario): Promise<LinhaDoFluxo[]> {
       despesa: String(l[2] ?? "").trim(),
       descricao: String(l[3] ?? "").trim(),
       valor: numeroBR(l[7]),
+      tipo: String(l[1] ?? "").trim(),
+      pagoCom: String(l[5] ?? "").trim(),
+      banco: String(l[6] ?? "").trim(),
     }))
     .filter((l) => /^\d{4}-\d{2}-\d{2}$/.test(l.data) && l.valor !== 0);
 }

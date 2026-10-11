@@ -7,6 +7,8 @@ const CartaoSchema = z.object({
   fechamento: z.number().int().min(1).max(31),
   /** Dia do mês em que a fatura vence. */
   vencimento: z.number().int().min(1).max(31),
+  /** Limite total do cartão, para o painel mostrar quanto ainda está disponível. */
+  limite: z.number().positive().optional(),
 });
 
 const UsuarioSchema = z.object({

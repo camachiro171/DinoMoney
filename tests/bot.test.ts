@@ -18,6 +18,7 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [],
     lerComprasNoCartao: vi.fn(async () => existentes),
     cadastrarConta: vi.fn(async () => {}),
     definirCartao: vi.fn(async (_u: unknown, nome: string) => nome),
+    definirLimite: vi.fn(async (_u: unknown, nome: string) => (nome.toLowerCase().includes("nubank") ? "Nubank Cartão" : undefined)),
     lerMetas: vi.fn(async () => extras.metas ?? []),
     definirMeta: vi.fn(async () => true),
     lerFluxo: vi.fn(async () => extras.fluxo ?? []),
@@ -118,6 +119,16 @@ describe("responder", () => {
     expect(deps.cadastrarConta).toHaveBeenCalledWith(usuario, "Bradesco", "Cartão");
     expect(gravadas[0].data).toBe("10/10/2026");
     expect(r).toContain("Cadastrei o cartão *Bradesco*");
+  });
+
+  it("comando de limite grava o limite do cartão sem chamar a IA", async () => {
+    const { deps } = fakes();
+    const r = await responder(texto("limite do cartão nubank de R$ 5.000,00"), usuario, deps);
+    expect(deps.definirLimite).toHaveBeenCalledWith(usuario, "nubank", 5000);
+    expect(deps.classificar).not.toHaveBeenCalled();
+    expect(r).toContain("Limite do *Nubank Cartão*");
+    const nao = await responder(texto("limite Inter 2000"), usuario, deps);
+    expect(nao).toContain("Não achei o cartão");
   });
 
   it("comando de cartão grava fechamento e vencimento sem chamar a IA", async () => {

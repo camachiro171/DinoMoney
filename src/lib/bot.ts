@@ -18,6 +18,7 @@ export interface Dependencias {
   cadastrarConta(u: Usuario, nome: string, tipo: TipoConta): Promise<void>;
   definirCartao(u: Usuario, nome: string, fechamento: number, vencimento: number): Promise<string>;
   removerConta(u: Usuario, nome: string, tipo?: TipoConta): Promise<string | undefined>;
+  definirLimite(u: Usuario, nome: string, limite: number): Promise<string | undefined>;
   lerMetas(u: Usuario): Promise<Meta[]>;
   definirMeta(u: Usuario, despesa: string, valor: number): Promise<boolean>;
   lerFluxo(u: Usuario): Promise<LinhaDoFluxo[]>;
@@ -41,10 +42,14 @@ Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.
 Metas: *meta mercado 800* define, *metas* mostra como está o mês.
 Contas fixas: diga "aluguel 2.357 todo dia 7" que eu prevejo os próximos meses. *recorrentes* lista, *remover recorrente aluguel* tira.
 *previsão* mostra o saldo esperado dos próximos meses.
-Suas contas: *minhas contas* mostra a lista, *nova conta Inter* cadastra, *novo cartão Nubank fecha 3 vence 10* cadastra um cartão e *remover conta Inter* tira da lista.`;
+Suas contas: *minhas contas* mostra a lista, *nova conta Inter* cadastra, *novo cartão Nubank fecha 3 vence 10* cadastra um cartão, *limite Nubank 5000* guarda o limite dele e *remover conta Inter* tira da lista.
+No site, o botão *Painel* mostra saldos, gastos do mês, a fatura que vem e o limite livre.`;
 
 /** "Nubank fecha 3 vence 10", "Inter fecha dia 5 e vence dia 12". */
 const COMANDO_CARTAO = /^(?:(?:novo|adicionar|cadastrar)\s+)?(?:o\s+)?(?:cart[aã]o\s+)?(.+?)\s+fecha\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*(?:,|e)?\s*vence\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*\.?$/i;
+
+/** "limite Nubank 5000", "limite do cartão Inter de R$ 2.500,00". */
+const COMANDO_LIMITE = /^limite\s+(?:do\s+)?(?:cart[aã]o\s+)?(.+?)\s+(?:de\s+|[eé]\s+)?(?:r\$\s*)?(\d[\d.]*(?:,\d{1,2})?)\s*(?:reais)?\.?$/i;
 
 const COMANDO_META = /^meta(?:\s+de)?(?:\s+gasto)?(?:\s+(?:com|para|em))?\s+(.+?)\s+(?:de\s+)?(?:r\$\s*)?(\d[\d.]*(?:,\d{1,2})?)\s*(?:reais|por m[eê]s|no m[eê]s)?$/i;
 const COMANDO_METAS = /^(?:minhas\s+)?metas\??$/i;
@@ -157,14 +162,16 @@ function listarRecorrentes(recorrentes: Recorrente[]): string {
 function listarContas(usuario: Usuario): string {
   const linhas = [
     ...usuario.contas.map((c) => `• ${c}`),
-    ...usuario.cartoes.map((c) => `• 💳 ${c.nome} (fecha dia ${c.fechamento}, vence dia ${c.vencimento})`),
+    ...usuario.cartoes.map(
+      (c) => `• 💳 ${c.nome} (fecha dia ${c.fechamento}, vence dia ${c.vencimento}${c.limite ? `, limite ${reais(c.limite)}` : ""})`,
+    ),
   ];
   if (linhas.length === 0) return "Você ainda não tem contas cadastradas. Mande, por exemplo, *nova conta Nubank*.";
   return [
     "Suas contas e cartões:",
     ...linhas,
     "",
-    "Para mudar: *nova conta Inter*, *novo cartão Nubank fecha 3 vence 10* ou *remover conta Inter*.",
+    "Para mudar: *nova conta Inter*, *novo cartão Nubank fecha 3 vence 10*, *limite Nubank 5000* ou *remover conta Inter*.",
   ].join("\n");
 }
 
@@ -227,6 +234,15 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
       return removida
         ? `🗑️ Tirei *${removida}* das contas recorrentes e apaguei os previstos dela.`
         : `Não achei "${tirarRecorrente[1].trim()}" nas contas recorrentes. Mande *recorrentes* para ver a lista.`;
+    }
+    const limite = pedido.match(COMANDO_LIMITE);
+    if (limite) {
+      const valor = Number(limite[2].replace(/\./g, "").replace(",", "."));
+      if (!(valor > 0)) return "Não entendi o valor. Exemplo: *limite Nubank 5000*.";
+      const nome = await deps.definirLimite(usuario, limite[1].trim(), valor);
+      return nome
+        ? `💳 Pronto! Limite do *${nome}*: ${reais(valor)}. O painel do site mostra quanto ainda está livre.`
+        : `Não achei o cartão "${limite[1].trim()}". Cadastre antes com *novo cartão ${limite[1].trim()} fecha 3 vence 10* (trocando pelos dias da sua fatura).`;
     }
     if (COMANDO_LISTAR.test(pedido)) return listarContas(usuario);
     const nova = pedido.match(COMANDO_NOVA);

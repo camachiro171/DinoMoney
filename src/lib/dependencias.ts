@@ -1,5 +1,5 @@
 import type { Dependencias } from "./bot";
-import { cadastrarConta, definirCartao, removerConta } from "./cadastro";
+import { cadastrarConta, definirCartao, definirLimite, removerConta } from "./cadastro";
 import { classificar } from "./classificador";
 import { definirMeta, lerFluxo, lerMetas } from "./metas";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, registrarNoLog } from "./planilha";
@@ -14,6 +14,7 @@ export const dependenciasPadrao: Omit<Dependencias, "baixarMidia"> = {
   cadastrarConta,
   definirCartao,
   removerConta,
+  definirLimite,
   lerMetas,
   definirMeta,
   lerFluxo,
