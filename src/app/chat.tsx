@@ -75,7 +75,7 @@ export function Chat({ nome }: { nome: string }) {
     },
   ]);
   const [texto, setTexto] = useState("");
-  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [arquivos, setArquivos] = useState<File[]>([]);
   const [enviando, setEnviando] = useState(false);
   const fim = useRef<HTMLDivElement>(null);
   const seletor = useRef<HTMLInputElement>(null);
@@ -95,12 +95,19 @@ export function Chat({ nome }: { nome: string }) {
     });
   }, []);
 
-  async function enviar(conteudo: string, anexo: File | null) {
-    if (enviando || (!conteudo.trim() && !anexo)) return;
+  async function enviar(conteudo: string, anexos: File[]) {
+    if (enviando || (!conteudo.trim() && anexos.length === 0)) return;
     setEnviando(true);
     setTexto("");
-    setArquivo(null);
+    setArquivos([]);
     if (seletor.current) seletor.current.value = "";
+    // Vários arquivos vão um de cada vez, cada um com a sua resposta.
+    if (anexos.length === 0) await enviarUm(conteudo, null);
+    for (const anexo of anexos) await enviarUm(conteudo, anexo);
+    setEnviando(false);
+  }
+
+  async function enviarUm(conteudo: string, anexo: File | null) {
     setMensagens((m) => [
       ...m,
       { de: "eu", texto: conteudo, anexo: anexo?.name },
@@ -141,7 +148,6 @@ export function Chat({ nome }: { nome: string }) {
       resposta = `Não consegui enviar. Confira sua internet e tente de novo.${detalhe}`;
     }
     setMensagens((m) => [...m.slice(0, -1), { de: "dino", texto: resposta }]);
-    setEnviando(false);
   }
 
   async function sair() {
@@ -156,7 +162,7 @@ export function Chat({ nome }: { nome: string }) {
           <strong>🦖 DinoMoney</strong> <span>by Fôlego</span>
         </div>
         <div>
-          <button className="link" onClick={() => enviar("desfazer", null)} disabled={enviando}>
+          <button className="link" onClick={() => enviar("desfazer", [])} disabled={enviando}>
             Desfazer último
           </button>
           <button className="link" onClick={sair}>
@@ -176,10 +182,10 @@ export function Chat({ nome }: { nome: string }) {
       </div>
 
       <footer className="rodape">
-        {arquivo && (
+        {arquivos.length > 0 && (
           <div className="selecionado">
-            <span>📎 {arquivo.name}</span>
-            <button className="link" onClick={() => setArquivo(null)}>
+            <span>📎 {arquivos.length === 1 ? arquivos[0].name : `${arquivos.length} arquivos`}</span>
+            <button className="link" onClick={() => setArquivos([])}>
               Remover
             </button>
           </div>
@@ -187,15 +193,16 @@ export function Chat({ nome }: { nome: string }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            enviar(texto, arquivo);
+            enviar(texto, arquivos);
           }}
         >
           <input
             ref={seletor}
             type="file"
             accept="image/*,application/pdf"
+            multiple
             hidden
-            onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+            onChange={(e) => setArquivos(Array.from(e.target.files ?? []))}
           />
           <button type="button" className="clipe" onClick={() => seletor.current?.click()} aria-label="Anexar foto ou PDF">
             📎
@@ -204,16 +211,16 @@ export function Chat({ nome }: { nome: string }) {
             className="campo"
             rows={1}
             value={texto}
-            placeholder={arquivo ? "Comentário (opcional)" : "Ex.: café 6 reais no pix"}
+            placeholder={arquivos.length ? "Comentário (opcional)" : "Ex.: café 6 reais no pix"}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                enviar(texto, arquivo);
+                enviar(texto, arquivos);
               }
             }}
           />
-          <button className="botao" disabled={enviando || (!texto.trim() && !arquivo)}>
+          <button className="botao" disabled={enviando || (!texto.trim() && arquivos.length === 0)}>
             Enviar
           </button>
         </form>
