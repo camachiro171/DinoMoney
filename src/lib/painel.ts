@@ -122,8 +122,8 @@ const ehAtrasada = (l: LinhaDoFluxo) => comparavel(l.pagoCom ?? "").startsWith("
 export const ehPrevista = (l: LinhaDoFluxo) =>
   ehPrevisto(l.descricao) || comparavel(l.pagoCom ?? "").startsWith("previs") || ehAtrasada(l);
 /** "Pagamento do cartão", "Pagamento da fatura", "Pag fatura Nubank". */
-const ehPagamentoDeCartao = (l: LinhaDoFluxo) =>
-  l.valor < 0 && /\bpag\w*\s+(?:d[aoe]s?\s+)?(?:cart|fatura)/.test(comparavel(l.descricao));
+const PAGAMENTO_NA_DESCRICAO = /\bpag\w*\s+(?:d[aoe]s?\s+)?(?:cart|fatura)/;
+const ehPagamentoDeCartao = (l: LinhaDoFluxo) => l.valor < 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao));
 /** Transferência entre contas e pagamento de fatura não são gasto: o gasto já está nas compras. */
 const ehTransferencia = (l: LinhaDoFluxo) =>
   /entre contas|transfer/.test(comparavel(`${l.tipo ?? ""} ${l.despesa}`)) || ehPagamentoDeCartao(l);
@@ -209,24 +209,24 @@ export function resumoDosCartoes(
     const dataProxima = doCartao[0]?.data;
     const valorProxima = dataProxima ? Math.max(0, -somar(doCartao.filter((l) => l.data === dataProxima))) : 0;
 
-    // Pagamentos feitos depois do último vencimento abatem a próxima fatura (e liberam limite).
+    // Pagamentos feitos depois do último vencimento abatem a próxima fatura.
     let antecipado = 0;
+    let emAberto = centavos(total);
     if (separado && cadastro) {
       const [a, m, d] = hoje.split("-").map(Number);
       const venceEsteMes = `${a}-${String(m).padStart(2, "0")}-${String(cadastro.vencimento).padStart(2, "0")}`;
       const ultimoVencimento = d >= cadastro.vencimento ? venceEsteMes : somarMeses(venceEsteMes, -1);
-      const pagamentos = fluxo.filter(
-        (l) =>
-          !ehPrevista(l) &&
-          !ehCredito(l) &&
-          ehPagamentoDeCartao(l) &&
-          l.data > ultimoVencimento &&
-          l.data <= hoje &&
-          (usuario.cartoes.length === 1 || cartaoDaLinha(l.banco ?? "", cadastrados) === cadastro.nome),
-      );
-      antecipado = -somar(pagamentos);
+      const doMesmoCartao = (l: LinhaDoFluxo) => usuario.cartoes.length === 1 || cartaoDaLinha(l.banco ?? "", cadastrados) === cadastro.nome;
+      const pagamentos = fluxo.filter((l) => !ehPrevista(l) && !ehCredito(l) && ehPagamentoDeCartao(l) && l.data <= hoje && doMesmoCartao(l));
+      antecipado = -somar(pagamentos.filter((l) => l.data > ultimoVencimento));
+      // O limite usado é o que sobra de TODAS as compras no crédito depois de TODOS os pagamentos:
+      // um pagamento feito logo depois do fechamento (antes do vencimento) também abate a fatura.
+      // Uma linha positiva no crédito chamada "Pagamento do cartão" é só o espelho do pagamento, não é estorno.
+      const compras = fluxo.filter((l) => ehCredito(l) && !(l.valor > 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao))) && doMesmoCartao(l));
+      emAberto = centavos(Math.max(0, -somar(compras) + somar(pagamentos)));
+    } else {
+      emAberto = centavos(Math.max(0, total - antecipado));
     }
-    const emAberto = centavos(Math.max(0, total - antecipado));
     const limite = cadastro?.limite;
     return {
       nome,
