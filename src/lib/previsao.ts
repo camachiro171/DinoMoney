@@ -182,4 +182,16 @@ export async function substituirPrevisto(usuario: Usuario, numeroLinha: number, 
   });
 }
 
+/** Troca só o valor (coluna H) de linhas já existentes. */
+export async function atualizarValores(usuario: Usuario, itens: { linha: number; valor: number }[]): Promise<void> {
+  if (itens.length === 0) return;
+  await cliente().spreadsheets.values.batchUpdate({
+    spreadsheetId: usuario.planilhaId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: itens.map((i) => ({ range: `${aba(usuario.abaFluxo)}!H${i.linha}`, values: [[i.valor]] })),
+    },
+  });
+}
+
 export { dataComparavel };
