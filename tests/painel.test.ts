@@ -220,3 +220,22 @@ describe("previsoesDeFatura (pagamento previsto vira a fatura de verdade)", () =
     expect(previsoesDeFatura(certo, HOJE, usuario)).toEqual([]);
   });
 });
+
+describe("fluxo de caixa no tempo usa a fatura que falta pagar", () => {
+  const dados = [
+    l("2026-09-01", 5000, "SI", "Itaú", "SI", "SI", "SI"),
+    l("2026-09-15", -300, "Supermercado", "Nubank", "Crédito"),
+    l("2026-09-14", -300, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-10-15", -700, "Supermercado", "Nubank", "Crédito"),
+    l("2026-10-10", -650, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-11-15", -80, "Supermercado", "Nubank", "Crédito"),
+    l("2026-11-15", -400, "Pagamento", "Nubank", "Previsão", "Pagamento do Cartão", "Entre Contas"),
+  ];
+
+  it("a barra do vencimento mostra só o que falta pagar, não a fatura inteira", () => {
+    const p = montarPainel(dados, usuario, [], HOJE, { futuro: 2 });
+    const saiuEm = (data: string) => p.barras.filter((b) => b.inicio <= data && b.fim >= data).reduce((t, b) => t + b.saiu, 0);
+    expect(saiuEm("2026-10-15")).toBe(50);
+    expect(saiuEm("2026-11-15")).toBe(80);
+  });
+});

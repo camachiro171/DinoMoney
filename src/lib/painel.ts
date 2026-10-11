@@ -185,6 +185,21 @@ export function saldosPorConta(fluxo: LinhaDoFluxo[], hoje: DataISO, separado = 
     .sort((a, b) => b.valor - a.valor);
 }
 
+/** Fatura que falta pagar num vencimento: as compras até a data menos tudo o que já foi pago, sem passar das compras do próprio vencimento. */
+function faturaQueFalta(compras: LinhaDoFluxo[], jaPago: number, data: DataISO): number {
+  const ate = -somar(compras.filter((l) => l.data <= data));
+  const nesse = -somar(compras.filter((l) => l.data === data));
+  return centavos(Math.max(0, Math.min(ate - jaPago, nesse)));
+}
+
+/** Compras do cartão no crédito (sem a linha espelho do pagamento) e o que já foi pago dele. */
+function comprasEPagamentos(fluxo: LinhaDoFluxo[], hoje: DataISO, cadastrados: string[]) {
+  const doCartao = (l: LinhaDoFluxo) => (cadastrados.length === 1 ? cadastrados[0] : cartaoDaLinha(l.banco ?? "", cadastrados));
+  const compras = fluxo.filter((l) => ehCredito(l) && !(l.valor > 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao))));
+  const pagos = fluxo.filter((l) => !ehPrevista(l) && !ehCredito(l) && ehPagamentoDeCartao(l) && l.data <= hoje);
+  return { doCartao, compras, pagos };
+}
+
 /**
  * Valor que ainda falta pagar em cada "Pagamento do cartão" previsto, para a linha da planilha mostrar a fatura
  * de verdade em vez de um chute. A fatura do vencimento é o que sobra das compras até aquela data depois de
@@ -197,20 +212,18 @@ export function previsoesDeFatura(
   usuario: Pick<Usuario, "cartoes">,
 ): { linha: number; valor: number }[] {
   const cadastrados = usuario.cartoes.map((c) => c.nome);
-  const doCartao = (l: LinhaDoFluxo) => (cadastrados.length === 1 ? cadastrados[0] : cartaoDaLinha(l.banco ?? "", cadastrados));
-  const compras = fluxo.filter((l) => ehCredito(l) && !(l.valor > 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao))));
-  const pagos = fluxo.filter((l) => !ehPrevista(l) && !ehCredito(l) && ehPagamentoDeCartao(l) && l.data <= hoje);
+  const { doCartao, compras, pagos } = comprasEPagamentos(fluxo, hoje, cadastrados);
   const previstos = fluxo.filter((l) => ehPrevista(l) && !ehCredito(l) && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao)));
 
   const mudancas: { linha: number; valor: number }[] = [];
   for (const prev of previstos) {
     const cartao = doCartao(prev);
     if (!cartao) continue;
-    const dele = compras.filter((l) => doCartao(l) === cartao);
-    const ate = -somar(dele.filter((l) => l.data <= prev.data));
-    const nesse = -somar(dele.filter((l) => l.data === prev.data));
-    const jaPago = -somar(pagos.filter((l) => doCartao(l) === cartao));
-    const fatura = centavos(Math.max(0, Math.min(ate - jaPago, nesse)));
+    const fatura = faturaQueFalta(
+      compras.filter((l) => doCartao(l) === cartao),
+      -somar(pagos.filter((l) => doCartao(l) === cartao)),
+      prev.data,
+    );
     const valor = fatura > 0 ? -fatura : 0;
     if (Math.abs(valor - prev.valor) >= 0.01) mudancas.push({ linha: prev.linha, valor });
   }
@@ -288,6 +301,7 @@ function movimentosDeCaixa(
   hoje: DataISO,
   cartoes: ResumoCartao[],
   separado: boolean,
+  usuario: Pick<Usuario, "cartoes">,
   banco?: string,
 ): Movimento[] {
   const amanha = somarDias(hoje, 1);
@@ -299,13 +313,29 @@ function movimentosDeCaixa(
       if (separado && ehCredito(l)) continue;
       movimentos.push({ data: l.data, valor: l.valor, futuro: false });
     } else {
-      if (separado && ehPagamentoDeCartao(l) && !ehCredito(l)) continue; // a fatura já entra pelas compras
+      if (separado && ehPagamentoDeCartao(l) && !ehCredito(l)) continue; // a fatura entra abaixo, pelo que falta pagar
+      if (separado && ehCredito(l)) continue; // as compras já estão nessa fatura
       movimentos.push({ data: l.data <= hoje ? amanha : l.data, valor: l.valor, futuro: true });
     }
   }
-  for (const c of cartoes) {
-    if (c.proxima && c.antecipado > 0 && doBanco(c.nome, banco)) {
-      movimentos.push({ data: c.proxima.data, valor: Math.min(c.antecipado, c.proxima.valor), futuro: true });
+  if (separado) {
+    // Cada fatura futura sai pelo que ainda falta pagar (compras até o vencimento menos o que já foi pago).
+    const cadastrados = usuario.cartoes.map((c) => c.nome);
+    const { doCartao, compras, pagos } = comprasEPagamentos(fluxo, hoje, cadastrados);
+    for (const c of cartoes) {
+      if (!doBanco(c.nome, banco)) continue;
+      const dele = compras.filter((l) => (doCartao(l) ?? l.banco) === c.nome);
+      const jaPago = -somar(pagos.filter((l) => doCartao(l) === c.nome));
+      for (const data of [...new Set(dele.filter((l) => l.data > hoje).map((l) => l.data))].sort()) {
+        const fatura = faturaQueFalta(dele, jaPago, data);
+        if (fatura > 0) movimentos.push({ data, valor: -fatura, futuro: true });
+      }
+    }
+  } else {
+    for (const c of cartoes) {
+      if (c.proxima && c.antecipado > 0 && doBanco(c.nome, banco)) {
+        movimentos.push({ data: c.proxima.data, valor: Math.min(c.antecipado, c.proxima.valor), futuro: true });
+      }
     }
   }
   return movimentos.sort((a, b) => a.data.localeCompare(b.data));
@@ -504,7 +534,7 @@ export function montarPainel(
   const filtro: Filtro = { banco, passado: opcao(pedido.passado, 3), futuro: opcao(pedido.futuro, 3), mes };
 
   const cartoes = resumoDosCartoes(fluxo, hoje, usuario, separado);
-  const movimentos = movimentosDeCaixa(fluxo, hoje, cartoes, separado, banco);
+  const movimentos = movimentosDeCaixa(fluxo, hoje, cartoes, separado, usuario, banco);
   const tempo = linhaDoTempo(movimentos, hoje, filtro.passado, filtro.futuro);
   const aPagar = contasAPagar(fluxo, hoje, cartoes, separado, banco);
   const { dividas, parcelamentos } = compromissos(fluxo, hoje, banco);
