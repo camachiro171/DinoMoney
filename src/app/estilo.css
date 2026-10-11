@@ -133,9 +133,10 @@ button, input, textarea { font: inherit; color: inherit; }
 .tempo text { font-size: 13px; fill: var(--suave); }
 .tempo .texto-hoje { fill: var(--azul); }
 .tempo .texto-zero { fill: var(--vermelho); }
-.tempo .texto-valor { font-size: 22px; font-weight: 700; fill: var(--texto); paint-order: stroke; stroke: var(--fundo, #fff); stroke-width: 4px; }
-.tempo .texto-valor.negativo { fill: var(--vermelho); }
-.tempo .ponto-saldo { fill: var(--texto); }
+.tempo .texto-escala { font-size: 20px; fill: var(--suave); }
+.tempo .texto-escala.negativo { fill: var(--vermelho); }
+.tempo .linha-grade { stroke: var(--suave); opacity: 0.25; }
+.tempo .eixo-valores { stroke: var(--suave); opacity: 0.6; }
 .tempo .coluna-escolhida { fill: var(--azul); opacity: 0.12; }
 .tempo .toque { fill: transparent; cursor: pointer; }
 .detalhe-barra { font-size: 14px; margin: 6px 0 0; }
