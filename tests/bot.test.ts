@@ -18,6 +18,7 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [],
     lerComprasNoCartao: vi.fn(async () => existentes),
     cadastrarConta: vi.fn(async () => {}),
     definirCartao: vi.fn(async (_u: unknown, nome: string) => nome),
+    definirLimite: vi.fn(async (_u: unknown, nome: string) => (nome.toLowerCase().includes("nubank") ? "Nubank Cartão" : undefined)),
     lerMetas: vi.fn(async () => extras.metas ?? []),
     definirMeta: vi.fn(async () => true),
     lerFluxo: vi.fn(async () => extras.fluxo ?? []),
@@ -118,6 +119,37 @@ describe("responder", () => {
     expect(deps.cadastrarConta).toHaveBeenCalledWith(usuario, "Bradesco", "Cartão");
     expect(gravadas[0].data).toBe("10/10/2026");
     expect(r).toContain("Cadastrei o cartão *Bradesco*");
+  });
+
+  it("conferir saldo lança a diferença com a data de hoje e não chama a IA", async () => {
+    const fluxo = [
+      { linha: 2, data: "2026-10-01", despesa: "Salário/Pró-labore", descricao: "", valor: 1000, banco: "Itaú", pagoCom: "Pix" },
+      { linha: 3, data: "2026-10-05", despesa: "Lanches", descricao: "", valor: -300, banco: "Itaú", pagoCom: "Pix" },
+      { linha: 4, data: "2026-10-30", despesa: "Lanches", descricao: "", valor: -50, banco: "Itaú", pagoCom: "Previsão" },
+    ];
+    const { deps, gravadas } = fakes(undefined, [], { fluxo });
+    const r = await responder(texto("saldo itau 712,35"), usuario, deps);
+    expect(deps.classificar).not.toHaveBeenCalled();
+    expect(gravadas).toHaveLength(1);
+    expect(gravadas[0]).toMatchObject({ banco: "Itaú", valor: 12.35, data: "10/10/2026", descricao: "Rendimento (conferência de saldo)" });
+    expect(r).toContain("planilha R$ 700,00");
+    expect(deps.registrarNoLog).toHaveBeenCalled();
+
+    const igual = await responder(texto("saldo Itaú 700"), usuario, fakes(undefined, [], { fluxo }).deps);
+    expect(igual).toContain("bate com a planilha");
+    const menos = fakes(undefined, [], { fluxo });
+    await responder(texto("conferir saldo do Itaú 690.50"), usuario, menos.deps);
+    expect(menos.gravadas[0]).toMatchObject({ valor: -9.5, descricao: "Diferença na conferência de saldo" });
+  });
+
+  it("comando de limite grava o limite do cartão sem chamar a IA", async () => {
+    const { deps } = fakes();
+    const r = await responder(texto("limite do cartão nubank de R$ 5.000,00"), usuario, deps);
+    expect(deps.definirLimite).toHaveBeenCalledWith(usuario, "nubank", 5000);
+    expect(deps.classificar).not.toHaveBeenCalled();
+    expect(r).toContain("Limite do *Nubank Cartão*");
+    const nao = await responder(texto("limite Inter 2000"), usuario, deps);
+    expect(nao).toContain("Não achei o cartão");
   });
 
   it("comando de cartão grava fechamento e vencimento sem chamar a IA", async () => {

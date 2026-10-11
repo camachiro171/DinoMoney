@@ -162,6 +162,9 @@ export function Chat({ nome }: { nome: string }) {
           <strong>🦖 DinoMoney</strong> <span>by Fôlego</span>
         </div>
         <div>
+          <a className="link" href="/painel">
+            Painel
+          </a>
           <button className="link" onClick={() => enviar("desfazer", [])} disabled={enviando}>
             Desfazer último
           </button>

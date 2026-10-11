@@ -19,6 +19,10 @@ export interface LinhaDoFluxo {
   despesa: string;
   descricao: string;
   valor: number;
+  /** Colunas que só o painel usa. */
+  tipo?: string;
+  pagoCom?: string;
+  banco?: string;
 }
 
 const comparavel = (t: string) =>
@@ -106,6 +110,37 @@ export async function lerFluxo(usuario: Usuario): Promise<LinhaDoFluxo[]> {
       despesa: String(l[2] ?? "").trim(),
       descricao: String(l[3] ?? "").trim(),
       valor: numeroBR(l[7]),
+      tipo: String(l[1] ?? "").trim(),
+      pagoCom: String(l[5] ?? "").trim(),
+      banco: String(l[6] ?? "").trim(),
     }))
     .filter((l) => /^\d{4}-\d{2}-\d{2}$/.test(l.data) && l.valor !== 0);
+}
+
+export interface Investimento {
+  nome: string;
+  valor: number;
+}
+
+/**
+ * Valor atualizado de cada investimento da aba "Investimentos" (coluna C = ativo, K = total atualizado,
+ * a partir da linha 10, como na planilha modelo). Sem a aba, devolve undefined.
+ */
+export async function lerInvestimentos(usuario: Usuario): Promise<Investimento[] | undefined> {
+  try {
+    const res = await cliente().spreadsheets.values.get({
+      spreadsheetId: usuario.planilhaId,
+      range: `${aba("Investimentos")}!C10:K500`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    return investimentosDasLinhas((res.data.values ?? []) as unknown[][]);
+  } catch {
+    return undefined;
+  }
+}
+
+export function investimentosDasLinhas(linhas: unknown[][]): Investimento[] {
+  return linhas
+    .map((l) => ({ nome: String(l[0] ?? "").trim(), valor: Math.round(numeroBR(l[8]) * 100) / 100 }))
+    .filter((i) => i.nome && i.valor !== 0);
 }
