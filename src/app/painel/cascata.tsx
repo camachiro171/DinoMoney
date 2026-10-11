@@ -8,10 +8,24 @@ const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curr
 const diaMes = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const mesCurto = (mes: string) => `${MESES[Number(mes.slice(5, 7)) - 1]}/${mes.slice(2, 4)}`;
 
+/** Marcas da escala: o zero e alguns valores redondos entre o menor e o maior saldo. */
+function marcas(min: number, max: number): number[] {
+  const faixa = max - min || 1;
+  const bruto = faixa / 4;
+  const pot = 10 ** Math.floor(Math.log10(bruto));
+  const passo = [1, 2, 2.5, 5, 10].map((m) => m * pot).find((x) => x >= bruto) ?? bruto;
+  const lista: number[] = [];
+  for (let v = Math.ceil(min / passo) * passo; v <= max + 1e-9; v += passo) lista.push(Math.round(v * 100) / 100);
+  return lista;
+}
+
+const escala = (v: number) =>
+  Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
 /**
  * Cascata no tempo: cada barra é um dia ou uma semana e começa onde a anterior terminou.
  * A linha é o saldo; depois de "hoje" as barras ficam claras (previsão); abaixo de zero fica vermelho.
- * Os valores aparecem escritos (hoje, menor saldo e fim do período) e, ao tocar numa barra, o detalhe dela.
+ * A escala de valores fica numa linha ao lado e, ao tocar numa barra, o detalhe dela aparece embaixo.
  */
 export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIndice: number }) {
   const [escolhida, escolher] = useState<number | undefined>();
@@ -19,25 +33,22 @@ export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIn
   const H = 260;
   const topo = 24;
   const base = 26;
+  const esq = 96;
+  const area = W - esq;
   const valores = [0, ...barras.flatMap((b) => [b.saldoInicial, b.saldoFinal])];
   const max = Math.max(...valores);
   const min = Math.min(...valores);
   const faixa = max - min || 1;
   const y = (v: number) => topo + ((max - v) / faixa) * (H - topo - base);
-  const largura = W / Math.max(1, barras.length);
+  const largura = area / Math.max(1, barras.length);
   const meses: { x: number; rotulo: string }[] = [];
   barras.forEach((b, i) => {
     const mes = b.inicio.slice(0, 7);
     if (i === 0 || barras[i - 1].inicio.slice(0, 7) !== mes) meses.push({ x: i * largura, rotulo: mesCurto(mes) });
   });
 
-  // Pontos com o valor do saldo escrito: hoje, o menor saldo e o último.
-  const indiceMenor = barras.reduce((m, b, i) => (b.saldoFinal < barras[m].saldoFinal ? i : m), 0);
-  // Sem escrever um valor em cima do outro: só entra se ficar longe dos já escolhidos.
-  const rotulados: number[] = [];
-  for (const i of [hojeIndice, indiceMenor, barras.length - 1]) {
-    if (i >= 0 && i < barras.length && rotulados.every((j) => Math.abs(i - j) * largura > 110)) rotulados.push(i);
-  }
+  // Saldo de hoje: o fim da barra de hoje (ou o começo do período, se ainda não passou nada).
+  const saldoAtual = hojeIndice >= 0 ? barras[hojeIndice].saldoFinal : barras[0]?.saldoInicial;
 
   const mostrada = escolhida ?? (hojeIndice >= 0 ? hojeIndice : barras.length - 1);
   const b = barras[mostrada];
@@ -45,60 +56,60 @@ export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIn
   return (
     <>
       <svg viewBox={`0 0 ${W} ${H}`} className="tempo" role="img" aria-label="Saldo ao longo do tempo">
-        {min < 0 && <rect x={0} y={y(0)} width={W} height={H - base - y(0)} className="area-negativa" />}
-        <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="linha-zero" />
-        {barras.map((barra, i) => {
-          const sobe = barra.saldoFinal >= barra.saldoInicial;
-          return (
-            <rect
-              key={i}
-              x={i * largura + largura * 0.12}
-              y={y(Math.max(barra.saldoInicial, barra.saldoFinal))}
-              width={largura * 0.76}
-              height={Math.max(1.5, Math.abs(y(barra.saldoInicial) - y(barra.saldoFinal)))}
-              rx={1.5}
-              className={`${sobe ? "sobe" : "desce"}${barra.futuro ? " previsto" : ""}`}
-            />
-          );
-        })}
-        <polyline className="linha-saldo" points={barras.map((barra, i) => `${(i + 1) * largura},${y(barra.saldoFinal)}`).join(" ")} />
-        {hojeIndice >= 0 && (
-          <>
-            <line x1={(hojeIndice + 1) * largura} x2={(hojeIndice + 1) * largura} y1={0} y2={H - base} className="linha-hoje" />
-            <text x={(hojeIndice + 1) * largura + 4} y={11} className="texto-hoje">
-              hoje
-            </text>
-          </>
-        )}
-        {mostrada >= 0 && <rect x={mostrada * largura} y={0} width={largura} height={H - base} className="coluna-escolhida" />}
-        {rotulados.map((i) => {
-          const x = (i + 1) * largura;
-          const direita = x > W - 150;
-          return (
-            <g key={`v${i}`}>
-              <circle cx={x} cy={y(barras[i].saldoFinal)} r={3.5} className="ponto-saldo" />
-              <text
-                x={direita ? x - 6 : x + 6}
-                y={y(barras[i].saldoFinal) + (barras[i].saldoFinal >= 0 ? -10 : 24)}
-                textAnchor={direita ? "end" : "start"}
-                className={`texto-valor${barras[i].saldoFinal < 0 ? " negativo" : ""}`}
-              >
-                {reais(barras[i].saldoFinal)}
+        {marcas(min, max).map((v) => (
+          <g key={v}>
+            <line x1={esq - 6} x2={W} y1={y(v)} y2={y(v)} className={v === 0 ? "linha-zero" : "linha-grade"} />
+            {(saldoAtual === undefined || Math.abs(y(v) - y(saldoAtual)) > 24) && (
+              <text x={esq - 10} y={y(v) + 6} textAnchor="end" className={`texto-escala${v < 0 ? " negativo" : ""}`}>
+                {escala(v)}
               </text>
-            </g>
-          );
-        })}
-        {meses.map((m) => (
-          <text key={m.x} x={m.x + 2} y={H - 8} className="texto-eixo">
-            {m.rotulo}
-          </text>
+            )}
+          </g>
         ))}
-        <text x={W - 2} y={y(0) - 4} textAnchor="end" className="texto-zero">
-          R$ 0
-        </text>
-        {barras.map((_, i) => (
-          <rect key={`t${i}`} x={i * largura} y={0} width={largura} height={H - base} className="toque" onClick={() => escolher(i)} />
-        ))}
+        <line x1={esq - 6} x2={esq - 6} y1={topo - 6} y2={H - base} className="eixo-valores" />
+        {saldoAtual !== undefined && (
+          <g>
+            <line x1={esq - 6} x2={W} y1={y(saldoAtual)} y2={y(saldoAtual)} className="linha-atual" />
+            <text x={esq - 10} y={y(saldoAtual) + 6} textAnchor="end" className="texto-atual">
+              {saldoAtual.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+            </text>
+          </g>
+        )}
+        <g transform={`translate(${esq} 0)`}>
+          {min < 0 && <rect x={0} y={y(0)} width={area} height={H - base - y(0)} className="area-negativa" />}
+          {barras.map((barra, i) => {
+            const sobe = barra.saldoFinal >= barra.saldoInicial;
+            return (
+              <rect
+                key={i}
+                x={i * largura + largura * 0.12}
+                y={y(Math.max(barra.saldoInicial, barra.saldoFinal))}
+                width={largura * 0.76}
+                height={Math.max(1.5, Math.abs(y(barra.saldoInicial) - y(barra.saldoFinal)))}
+                rx={1.5}
+                className={`${sobe ? "sobe" : "desce"}${barra.futuro ? " previsto" : ""}`}
+              />
+            );
+          })}
+          <polyline className="linha-saldo" points={barras.map((barra, i) => `${(i + 1) * largura},${y(barra.saldoFinal)}`).join(" ")} />
+          {hojeIndice >= 0 && (
+            <>
+              <line x1={(hojeIndice + 1) * largura} x2={(hojeIndice + 1) * largura} y1={0} y2={H - base} className="linha-hoje" />
+              <text x={(hojeIndice + 1) * largura + 4} y={11} className="texto-hoje">
+                hoje
+              </text>
+            </>
+          )}
+          {mostrada >= 0 && <rect x={mostrada * largura} y={0} width={largura} height={H - base} className="coluna-escolhida" />}
+          {meses.map((m) => (
+            <text key={m.x} x={m.x + 2} y={H - 8} className="texto-eixo">
+              {m.rotulo}
+            </text>
+          ))}
+          {barras.map((_, i) => (
+            <rect key={`t${i}`} x={i * largura} y={0} width={largura} height={H - base} className="toque" onClick={() => escolher(i)} />
+          ))}
+        </g>
       </svg>
       {b && (
         <p className="detalhe-barra">
