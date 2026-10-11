@@ -133,6 +133,13 @@ button, input, textarea { font: inherit; color: inherit; }
 .tempo text { font-size: 13px; fill: var(--suave); }
 .tempo .texto-hoje { fill: var(--azul); }
 .tempo .texto-zero { fill: var(--vermelho); }
+.tempo .texto-valor { font-size: 22px; font-weight: 700; fill: var(--texto); paint-order: stroke; stroke: var(--fundo, #fff); stroke-width: 4px; }
+.tempo .texto-valor.negativo { fill: var(--vermelho); }
+.tempo .ponto-saldo { fill: var(--texto); }
+.tempo .coluna-escolhida { fill: var(--azul); opacity: 0.12; }
+.tempo .toque { fill: transparent; cursor: pointer; }
+.detalhe-barra { font-size: 14px; margin: 6px 0 0; }
+.detalhe-barra .dica-toque { color: var(--suave); font-size: 12px; }
 .legenda-grafico { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--suave); margin-top: 6px; }
 .cor { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .cor.sobe { background: var(--verde); }
