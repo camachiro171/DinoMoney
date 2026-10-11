@@ -129,24 +129,16 @@ function Compromissos({ titulo, total, itens, vazio }: { titulo: string; total: 
   );
 }
 
-function ListaDeSaldos({ titulo, saldos }: { titulo?: string; saldos: Saldo[] }) {
-  if (saldos.length === 0) return null;
+function ListaDeSaldos({ saldos }: { saldos: Saldo[] }) {
   return (
-    <>
-      {titulo && (
-        <h3 className="subtitulo">
-          {titulo} <span>{reais(saldos.reduce((t, s) => t + s.valor, 0))}</span>
-        </h3>
-      )}
-      <ul className="lista">
-        {saldos.map((s) => (
-          <li key={s.conta}>
-            <span>{s.conta}</span>
-            <span className={s.valor < 0 ? "negativo" : ""}>{reais(s.valor)}</span>
-          </li>
-        ))}
-      </ul>
-    </>
+    <ul className="lista">
+      {saldos.map((s) => (
+        <li key={s.conta}>
+          <span>{s.conta}</span>
+          <span className={s.valor < 0 ? "negativo" : ""}>{reais(s.valor)}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -156,7 +148,12 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
   const guardados = p.saldos.filter((s) => s.guardado);
   const nasContas = p.saldos.filter((s) => !s.guardado);
   const parado = nasContas.reduce((t, s) => t + Math.max(0, s.valor), 0);
-  const totalInvestido = investimentos?.reduce((s, i) => s + i.valor, 0) ?? 0;
+  const totalNasContas = nasContas.reduce((t, s) => t + s.valor, 0);
+  const totalGuardado = guardados.reduce((t, s) => t + s.valor, 0);
+  // Caixinhas e cofrinhos têm bloco próprio; aqui ficam só os investimentos de longo prazo.
+  const nomesGuardados = new Set(guardados.map((g) => g.conta.toLowerCase()));
+  const deLongoPrazo = investimentos?.filter((i) => !/cofrinho|caixinha/i.test(i.tipo) && !nomesGuardados.has(i.nome.toLowerCase()));
+  const totalInvestido = deLongoPrazo?.reduce((s, i) => s + i.valor, 0) ?? 0;
   const atrasadas = p.aPagar.filter((c) => c.atrasada);
 
   return (
@@ -252,22 +249,18 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
           </ul>
         )}
         <p className="vazio">
-          Saldo hoje {reais(p.saldoHoje)}. Depois dessas contas sobra <b>{reais(p.saldoHoje - p.totalAPagar)}</b>.
+          {guardados.length > 0 ? "Disponível hoje, somando contas e cofrinhos," : "Saldo hoje"} {reais(p.saldoHoje)}. Depois dessas contas sobra <b>{reais(p.saldoHoje - p.totalAPagar)}</b>.
         </p>
       </section>
 
       <div className="grade">
         <section className="bloco">
           <h2>Saldos de hoje</h2>
-          <p className="destaque">{reais(p.saldoHoje)}</p>
-          {guardados.length > 0 ? (
-            <>
-              <ListaDeSaldos titulo="Nas contas" saldos={nasContas} />
-              <ListaDeSaldos titulo="Reserva de gastos (rendendo)" saldos={guardados} />
-              <p className="vazio">A reserva conta como dinheiro disponível, porque pode ser resgatada na hora de pagar.</p>
-            </>
+          <p className="destaque">{reais(totalNasContas)}</p>
+          {nasContas.length > 0 ? (
+            <ListaDeSaldos saldos={nasContas} />
           ) : (
-            <ListaDeSaldos saldos={p.saldos} />
+            <p className="vazio">Contas zeradas. {guardados.length > 0 ? "Todo o dinheiro está rendendo nos cofrinhos. 👏" : ""}</p>
           )}
           {parado > 0.009 && (
             <p className="dica">
@@ -275,6 +268,15 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
             </p>
           )}
         </section>
+
+        {guardados.length > 0 && (
+          <section className="bloco">
+            <h2>Cofrinhos · reserva de gastos</h2>
+            <p className="destaque">{reais(totalGuardado)}</p>
+            <ListaDeSaldos saldos={guardados} />
+            <p className="vazio">Rende todo dia e pode ser resgatado na hora de pagar.</p>
+          </section>
+        )}
 
         <section className="bloco">
           <h2>Cartões</h2>
@@ -318,26 +320,27 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
 
         <section className="bloco">
           <h2>Investimentos</h2>
-          {investimentos === undefined ? (
+          {deLongoPrazo === undefined ? (
             <p className="vazio">Sua planilha não tem a aba Investimentos.</p>
           ) : (
             <>
               <p className="destaque">{reais(totalInvestido)}</p>
-              <ul className="lista">
-                {investimentos.map((i) => (
-                  <li key={i.nome}>
-                    <span>
-                      {i.nome}
-                      {(i.banco || i.tipo) && <small>{[i.tipo, i.banco].filter(Boolean).join(" · ")}</small>}
-                    </span>
-                    <span className={i.valor < 0 ? "negativo" : ""}>{reais(i.valor)}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="vazio">
-                Valor atualizado da aba Investimentos.
-                {guardados.length > 0 ? " Caixinhas e cofrinhos aparecem também na reserva de gastos." : " Não entra no saldo acima."}
-              </p>
+              {deLongoPrazo.length === 0 ? (
+                <p className="vazio">Nenhum investimento de longo prazo ainda.</p>
+              ) : (
+                <ul className="lista">
+                  {deLongoPrazo.map((i) => (
+                    <li key={i.nome}>
+                      <span>
+                        {i.nome}
+                        {(i.banco || i.tipo) && <small>{[i.tipo, i.banco].filter(Boolean).join(" · ")}</small>}
+                      </span>
+                      <span className={i.valor < 0 ? "negativo" : ""}>{reais(i.valor)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="vazio">Valor atualizado da aba Investimentos.</p>
             </>
           )}
         </section>
