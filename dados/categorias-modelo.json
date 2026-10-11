@@ -1,0 +1,362 @@
+[
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Internet"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Telefone"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Água"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Energia elétrica"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Seguro residencial"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Aluguel/Financiamento"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Alimentação",
+  "despesa": "Feira"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Alimentação",
+  "despesa": "Padaria"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Alimentação",
+  "despesa": "Supermercado"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Saúde",
+  "despesa": "Plano de Saúde"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Pet",
+  "despesa": "Alimentação Pet"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Pet",
+  "despesa": "Remédio Pet"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Pet",
+  "despesa": "Veterinário"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Transporte",
+  "despesa": "IPVA"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Educação"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Transporte",
+  "despesa": "Reparos/Manutenção"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Farmacia"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Transporte",
+  "despesa": "Seguro Automovel"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Crianças",
+  "despesa": "Material Escolar"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Transporte",
+  "despesa": "Parcelas do Carro"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Crianças",
+  "despesa": "Mensalidade Escolar"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Saúde",
+  "despesa": "Remédios"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Manutenção"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Saúde",
+  "despesa": "Médico/Dentista"
+ },
+ {
+  "grupo": "Essencial",
+  "tipo": "Casa",
+  "despesa": "Condomínio"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Saúde",
+  "despesa": "Academia"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Crianças",
+  "despesa": "Esportes Crianças"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Pet",
+  "despesa": "Banho e Tosa"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Casa",
+  "despesa": "Outros Gastos com Casa"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Doação"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Casa",
+  "despesa": "Melhorias"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Sapatos"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Casa",
+  "despesa": "Faxineira"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Roupas"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Crianças",
+  "despesa": "Idiomas"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Transporte",
+  "despesa": "Combustível"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Saúde",
+  "despesa": "Outros Gastos com Saúde"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Saúde",
+  "despesa": "Seguro de Vida"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Transporte",
+  "despesa": "Transporte Público"
+ },
+ {
+  "grupo": "Necessária",
+  "tipo": "Saúde",
+  "despesa": "Consultas Particulares"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Custos Financeiros",
+  "despesa": "Tarifas de Cartão"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Transporte",
+  "despesa": "Outros Gastos com Transporte"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Transporte",
+  "despesa": "Estacionamento"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Transporte",
+  "despesa": "Pedágio"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Pet",
+  "despesa": "Outros Gastos com Pet"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Pet",
+  "despesa": "Hospedagens Pet"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Lazer",
+  "despesa": "Outras Gastos com Lazer"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Lazer",
+  "despesa": "Netflix/Streamings"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Outros Gastos Pessoais"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Lazer",
+  "despesa": "Esportes"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Presentes"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Estetica"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Lazer",
+  "despesa": "Shows/Eventos/Cinema"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Gastos Pessoais",
+  "despesa": "Acessorios"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Lazer",
+  "despesa": "Assinaturas/Jogos"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Outros Gastos com Férias/Viagens"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Aluguel de Carro"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Lembrancinhas"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Custos Financeiros",
+  "despesa": "Outros Custos Financeiros"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Comida"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Acomodações"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Custos Financeiros",
+  "despesa": "Parcela de emprestimos"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Custos Financeiros",
+  "despesa": "Multas por atraso"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Custos Financeiros",
+  "despesa": "Juros"
+ },
+ {
+  "grupo": "Supérflua",
+  "tipo": "Férias/Viagens",
+  "despesa": "Passagens"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Renda Principal",
+  "despesa": "Salário/Pró-labore"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Renda Extra",
+  "despesa": "Renda Extra"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Renda Passiva",
+  "despesa": "Dividendos / Rendimento de Juros"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Outras Rendas e Receitas",
+  "despesa": "Reembolsos"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Outras Rendas e Receitas",
+  "despesa": "Pensão"
+ },
+ {
+  "grupo": "Renda",
+  "tipo": "Outras Rendas e Receitas",
+  "despesa": "Outras Rendas"
+ },
+ {
+  "grupo": "Entre Contas",
+  "tipo": "Entre Contas",
+  "despesa": "Entre Contas"
+ }
+]
