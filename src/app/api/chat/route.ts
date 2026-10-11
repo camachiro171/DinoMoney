@@ -1,10 +1,10 @@
 import { after, NextResponse } from "next/server";
 import { usuarioLogado } from "@/lib/autenticacao";
 import { responder } from "@/lib/bot";
-import { classificar } from "@/lib/classificador";
-import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, lerResposta, registrarNoLog, salvarResposta } from "@/lib/planilha";
+import { dependenciasPadrao } from "@/lib/dependencias";
+import { lerResposta, salvarResposta } from "@/lib/planilha";
 import { mensagemDoSite } from "@/lib/web";
-import { cadastrarConta, definirCartao, removerConta, prepararUsuario } from "@/lib/cadastro";
+import { prepararUsuario } from "@/lib/cadastro";
 
 export const runtime = "nodejs";
 // Ler um extrato inteiro pode levar um tempo
@@ -37,18 +37,7 @@ export async function POST(req: Request) {
   after(async () => {
     let resposta: string;
     try {
-      resposta = await responder(msg, await prepararUsuario(usuario), {
-        buscarContexto,
-        classificar,
-        gravarNoFluxo,
-        lerComprasNoCartao,
-        cadastrarConta,
-        definirCartao,
-        removerConta,
-        registrarNoLog,
-        desfazerUltimo,
-        baixarMidia,
-      });
+      resposta = await responder(msg, await prepararUsuario(usuario), { ...dependenciasPadrao, baixarMidia });
     } catch (erro) {
       console.error("Erro ao processar mensagem do site", msg.id, erro);
       resposta = "Tive um problema para lançar isso agora 😕 Tenta de novo daqui a pouco?";

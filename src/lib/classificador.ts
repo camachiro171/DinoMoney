@@ -36,6 +36,10 @@ export function montarSchema(categorias: Categoria[], usuario: Usuario) {
     valor: z.number().describe("Valor total, sempre positivo, em reais"),
     natureza: z.string().describe('"saida" ou "entrada"'),
     parcelas: z.number().describe("Número de parcelas; 1 se à vista"),
+    recorrente_dia: z
+      .number()
+      .optional()
+      .describe("Dia do mês em que se repete, se a pessoa disse que é todo mês (aluguel, salário, assinatura); 0 ou vazio se não"),
   });
   return z.object({
     resposta: z.string().describe('"lancamentos", "pergunta" ou "nao_financeiro"'),
@@ -71,6 +75,7 @@ Regras:
 - Sem data informada, use a data de hoje. Sem conta informada, use a primeira conta da lista. Sem forma de pagamento, use Pix.
 - Se faltar o valor, ou se não der para saber se foi gasto ou recebimento, responda "pergunta" com uma pergunta curta e lancamentos vazio.
 - Se a mensagem não tiver nada de financeiro (um "oi", por exemplo), responda "nao_financeiro".
+- Conta que se repete todo mês ("aluguel 2.357 todo dia 7", "salário cai dia 5", "Netflix todo mês"): preencha recorrente_dia com o dia. Em "data", use a data em que aconteceu; se a pessoa só está avisando de uma conta fixa que ainda vai vencer, use a próxima data de vencimento.
 - Na dúvida entre categorias parecidas, escolha a mais específica.`;
 }
 
