@@ -121,8 +121,8 @@ const ehAtrasada = (l: LinhaDoFluxo) => comparavel(l.pagoCom ?? "").startsWith("
 /** Ainda não aconteceu: "[previsto]" na descrição, ou "Previsão" ou "Atrasado" em Pago com. */
 export const ehPrevista = (l: LinhaDoFluxo) =>
   ehPrevisto(l.descricao) || comparavel(l.pagoCom ?? "").startsWith("previs") || ehAtrasada(l);
-/** "Pagamento do cartão", "Pagamento da fatura", "Pag fatura Nubank". */
-const PAGAMENTO_NA_DESCRICAO = /\bpag\w*\s+(?:d[aoe]s?\s+)?(?:cart|fatura)/;
+/** "Pagamento do cartão", "Pagamento da fatura", "Pag fatura Nubank", "Paguei a fatura". "Pagar fatura" (lembrete de reembolso) não conta. */
+const PAGAMENTO_NA_DESCRICAO = /\b(?:pagamentos?|pag\.?|paguei|pago)\s+(?:d[aoe]s?\s+|a\s+)?(?:cart|fatura)/;
 const ehPagamentoDeCartao = (l: LinhaDoFluxo) => l.valor < 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao));
 /** Transferência entre contas e pagamento de fatura não são gasto: o gasto já está nas compras. */
 const ehTransferencia = (l: LinhaDoFluxo) =>

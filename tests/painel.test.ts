@@ -188,4 +188,9 @@ describe("limite do cartão (pagamentos feitos entre o fechamento e o vencimento
     expect(p.cartoes[0].emAberto).toBe(450);
     expect(p.cartoes[0].disponivel).toBe(-50);
   });
+
+  it("não confunde um gasto chamado 'Pagar fatura' com pagamento do cartão", () => {
+    const comLembrete = [...fatura, l("2026-09-14", -25.82, "Lanches", "Itaú", "Pix", "Pagar fatura")];
+    expect(montarPainel(comLembrete, usuario, [], HOJE).cartoes[0].emAberto).toBe(450);
+  });
 });
