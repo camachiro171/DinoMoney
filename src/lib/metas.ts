@@ -119,18 +119,21 @@ export async function lerFluxo(usuario: Usuario): Promise<LinhaDoFluxo[]> {
 
 export interface Investimento {
   nome: string;
+  banco: string;
+  tipo: string;
   valor: number;
 }
 
 /**
- * Valor atualizado de cada investimento da aba "Investimentos" (coluna C = ativo, K = total atualizado,
- * a partir da linha 10, como na planilha modelo). Sem a aba, devolve undefined.
+ * Valor atualizado de cada investimento da aba "Investimentos". As colunas são achadas pelo cabeçalho
+ * ("Ativo", "Banco", "Tipo", "Total Atualizado"), que fica na linha 9 da planilha modelo.
+ * Sem a aba, devolve undefined.
  */
 export async function lerInvestimentos(usuario: Usuario): Promise<Investimento[] | undefined> {
   try {
     const res = await cliente().spreadsheets.values.get({
       spreadsheetId: usuario.planilhaId,
-      range: `${aba("Investimentos")}!C10:K500`,
+      range: `${aba("Investimentos")}!A1:Z500`,
       valueRenderOption: "UNFORMATTED_VALUE",
     });
     return investimentosDasLinhas((res.data.values ?? []) as unknown[][]);
@@ -140,7 +143,19 @@ export async function lerInvestimentos(usuario: Usuario): Promise<Investimento[]
 }
 
 export function investimentosDasLinhas(linhas: unknown[][]): Investimento[] {
+  const normal = (v: unknown) => comparavel(String(v ?? ""));
+  const i = linhas.findIndex((l) => l.some((c) => normal(c) === "ativo") && l.some((c) => normal(c) === "total atualizado"));
+  if (i < 0) return [];
+  const cab = linhas[i].map(normal);
+  const col = (nome: string) => cab.indexOf(nome);
+  const [ativo, banco, tipo, total] = [col("ativo"), col("banco"), col("tipo"), col("total atualizado")];
   return linhas
-    .map((l) => ({ nome: String(l[0] ?? "").trim(), valor: Math.round(numeroBR(l[8]) * 100) / 100 }))
-    .filter((i) => i.nome && i.valor !== 0);
+    .slice(i + 1)
+    .map((l) => ({
+      nome: String(l[ativo] ?? "").trim(),
+      banco: banco >= 0 ? String(l[banco] ?? "").trim() : "",
+      tipo: tipo >= 0 ? String(l[tipo] ?? "").trim() : "",
+      valor: Math.round(numeroBR(l[total]) * 100) / 100,
+    }))
+    .filter((x) => x.nome && x.valor !== 0);
 }

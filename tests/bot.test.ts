@@ -3,10 +3,10 @@ import { responder, type Dependencias } from "@/lib/bot";
 import { RespostaGrandeDemais, type Classificacao } from "@/lib/classificador";
 import type { LinhaFluxo } from "@/lib/lancamentos";
 import type { LinhaExistente } from "@/lib/planilha";
-import type { LinhaDoFluxo, Meta } from "@/lib/metas";
+import type { Investimento, LinhaDoFluxo, Meta } from "@/lib/metas";
 import { categorias, usuario } from "./fixtures";
 
-function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [], extras: { fluxo?: LinhaDoFluxo[]; metas?: Meta[] } = {}) {
+function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [], extras: { fluxo?: LinhaDoFluxo[]; metas?: Meta[]; investimentos?: Investimento[] } = {}) {
   const gravadas: LinhaFluxo[] = [];
   const deps: Dependencias = {
     buscarContexto: vi.fn(async () => ({ categorias, exemplos: [] })),
@@ -22,6 +22,7 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [],
     lerMetas: vi.fn(async () => extras.metas ?? []),
     definirMeta: vi.fn(async () => true),
     lerFluxo: vi.fn(async () => extras.fluxo ?? []),
+    lerInvestimentos: vi.fn(async () => extras.investimentos ?? []),
     cadastrarRecorrente: vi.fn(async () => {}),
     lerRecorrentes: vi.fn(async () => []),
     removerRecorrente: vi.fn(async () => undefined),
@@ -127,16 +128,28 @@ describe("responder", () => {
       { linha: 3, data: "2026-10-05", despesa: "Lanches", descricao: "", valor: -300, banco: "Itaú", pagoCom: "Pix" },
       { linha: 4, data: "2026-10-30", despesa: "Lanches", descricao: "", valor: -50, banco: "Itaú", pagoCom: "Previsão" },
     ];
-    const { deps, gravadas } = fakes(undefined, [], { fluxo });
+    const investimentos = [{ nome: "Cofrinho Itaú", banco: "Itaú", tipo: "Cofrinhos", valor: 700 }];
+    const { deps, gravadas } = fakes(undefined, [], { fluxo, investimentos });
     const r = await responder(texto("saldo itau 712,35"), usuario, deps);
     expect(deps.classificar).not.toHaveBeenCalled();
     expect(gravadas).toHaveLength(1);
-    expect(gravadas[0]).toMatchObject({ banco: "Itaú", valor: 12.35, data: "10/10/2026", descricao: "Rendimento (conferência de saldo)" });
+    expect(gravadas[0]).toMatchObject({
+      banco: "Itaú",
+      valor: 12.35,
+      data: "10/10/2026",
+      pagoCom: "Rendimento",
+      descricao: "Rendimento (conferência de saldo)",
+    });
     expect(r).toContain("planilha R$ 700,00");
     expect(deps.registrarNoLog).toHaveBeenCalled();
 
     const igual = await responder(texto("saldo Itaú 700"), usuario, fakes(undefined, [], { fluxo }).deps);
     expect(igual).toContain("bate com a planilha");
+    // Sem caixinha cadastrada para a conta, sobra no banco não é tratada como rendimento.
+    const semCaixinha = fakes(undefined, [], { fluxo });
+    const aviso = await responder(texto("saldo Itaú 712,35"), usuario, semCaixinha.deps);
+    expect(semCaixinha.gravadas[0]).toMatchObject({ valor: 12.35, descricao: "Diferença na conferência de saldo" });
+    expect(aviso).toContain("aba Investimentos");
     const menos = fakes(undefined, [], { fluxo });
     await responder(texto("conferir saldo do Itaú 690.50"), usuario, menos.deps);
     expect(menos.gravadas[0]).toMatchObject({ valor: -9.5, descricao: "Diferença na conferência de saldo" });

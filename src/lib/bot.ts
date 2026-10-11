@@ -1,5 +1,5 @@
 import type { TipoConta } from "./cadastro";
-import { acharDespesa, gastosDoMes, type LinhaDoFluxo, type Meta } from "./metas";
+import { acharDespesa, gastosDoMes, type Investimento, type LinhaDoFluxo, type Meta } from "./metas";
 import { acharPrevisto, ehPrevisto, marcarPrevisto, MESES_PROJETADOS, projetar, resumirPrevisao, type Recorrente } from "./previsao";
 import { ehRenda } from "./categorias";
 import type { Usuario } from "./config";
@@ -23,6 +23,7 @@ export interface Dependencias {
   lerMetas(u: Usuario): Promise<Meta[]>;
   definirMeta(u: Usuario, despesa: string, valor: number): Promise<boolean>;
   lerFluxo(u: Usuario): Promise<LinhaDoFluxo[]>;
+  lerInvestimentos(u: Usuario): Promise<Investimento[] | undefined>;
   cadastrarRecorrente(u: Usuario, linha: LinhaFluxo, dia: number): Promise<void>;
   lerRecorrentes(u: Usuario): Promise<Recorrente[]>;
   removerRecorrente(u: Usuario, nome: string): Promise<string | undefined>;
@@ -213,6 +214,12 @@ async function conferirSaldo(
   const diferenca = Math.round((noBanco - naPlanilha) * 100) / 100;
   if (Math.abs(diferenca) < 0.01) return `✅ Saldo do *${conta}* bate com a planilha: ${reais(noBanco)}.`;
 
+  // A mais no banco só vira rendimento quando a conta tem caixinha/cofrinho/investimento na aba
+  // Investimentos (coluna Banco). Sem isso pode ser uma entrada esquecida, e o Dino avisa em vez de supor.
+  const investimentos = (await deps.lerInvestimentos(usuario)) ?? [];
+  const rende = investimentos.some((i) => comparavel(i.banco) === comparavel(conta) || comparavel(i.nome).includes(comparavel(conta)));
+  const rendimento = diferenca > 0 && rende;
+
   const { categorias } = await deps.buscarContexto(usuario);
   const achar = (teste: RegExp, renda: boolean) =>
     categorias.find((c) => ehRenda(c) === renda && teste.test(comparavel(`${c.tipo} ${c.despesa}`)));
@@ -226,21 +233,20 @@ async function conferirSaldo(
     data: paraPlanilha(hoje),
     dataISO: hoje,
     despesa: categoria.despesa,
-    descricao: diferenca > 0 ? "Rendimento (conferência de saldo)" : "Diferença na conferência de saldo",
+    descricao: rendimento ? "Rendimento (conferência de saldo)" : "Diferença na conferência de saldo",
     nome: conta,
-    pagoCom: "Débito",
+    pagoCom: rendimento ? "Rendimento" : "Débito",
     banco: conta,
     valor: diferenca,
     categoria,
   };
   const gravacao = await deps.gravarNoFluxo(usuario, [linha]);
-  const texto = [
-    `🏦 Conferi o *${conta}*: banco ${reais(noBanco)}, planilha ${reais(naPlanilha)}.`,
-    diferenca > 0
-      ? `Lancei ${reais(diferenca)} de rendimento hoje (${categoria.despesa}).`
-      : `Lancei ${reais(-diferenca)} como diferença hoje (${categoria.despesa}). Se for um gasto esquecido, mande *desfazer* e lance o gasto certo.`,
-    "Agora o saldo bate.",
-  ].join("\n");
+  const explicacao = rendimento
+    ? `Lancei ${reais(diferenca)} de rendimento hoje (${categoria.despesa}).`
+    : diferenca > 0
+      ? `Lancei ${reais(diferenca)} como diferença hoje. Se for rendimento de caixinha, cadastre a caixinha na aba Investimentos com o banco *${conta}*. Se foi uma entrada que faltou lançar, mande *desfazer* e me conte qual foi.`
+      : `Lancei ${reais(-diferenca)} como diferença hoje (${categoria.despesa}). Se for um gasto esquecido, mande *desfazer* e me conte qual foi.`;
+  const texto = [`🏦 Conferi o *${conta}*: banco ${reais(noBanco)}, planilha ${reais(naPlanilha)}.`, explicacao, "Agora o saldo bate."].join("\n");
   await deps.registrarNoLog(usuario, mensagemId, gravacao, texto.split("\n")[1]);
   return texto;
 }
