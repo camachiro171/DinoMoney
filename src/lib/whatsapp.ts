@@ -57,6 +57,42 @@ export function extrairMensagens(corpo: unknown): MensagemRecebida[] {
   return mensagens;
 }
 
+export interface FalhaDeEnvio {
+  para: string;
+  mensagemId: string;
+  erros: { codigo?: number; titulo?: string; detalhe?: string }[];
+}
+
+interface WebhookStatus {
+  id: string;
+  status: string;
+  recipient_id: string;
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
+}
+
+/** Extrai os avisos de "não entregue" que a Meta manda depois de um envio aceito. */
+export function extrairFalhas(corpo: unknown): FalhaDeEnvio[] {
+  const falhas: FalhaDeEnvio[] = [];
+  const entries = (corpo as { entry?: { changes?: { value?: { statuses?: WebhookStatus[] } }[] }[] })?.entry ?? [];
+  for (const entry of entries) {
+    for (const change of entry.changes ?? []) {
+      for (const st of change.value?.statuses ?? []) {
+        if (st.status !== "failed") continue;
+        falhas.push({
+          para: st.recipient_id,
+          mensagemId: st.id,
+          erros: (st.errors ?? []).map((e) => ({
+            codigo: e.code,
+            titulo: e.title ?? e.message,
+            detalhe: e.error_data?.details,
+          })),
+        });
+      }
+    }
+  }
+  return falhas;
+}
+
 function cabecalhos() {
   return { Authorization: `Bearer ${exigirEnv("WHATSAPP_TOKEN")}` };
 }
@@ -78,4 +114,5 @@ export async function enviarTexto(para: string, texto: string): Promise<void> {
     body: JSON.stringify({ messaging_product: "whatsapp", to: para, type: "text", text: { body: texto.slice(0, 4000) } }),
   });
   if (!res.ok) throw new Error(`Falha ao enviar mensagem: ${res.status} ${await res.text()}`);
+  console.log("Resposta aceita pela Meta para", para);
 }

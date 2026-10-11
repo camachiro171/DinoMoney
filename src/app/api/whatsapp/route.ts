@@ -3,7 +3,7 @@ import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
 import { encontrarUsuario, exigirEnv } from "@/lib/config";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, jaProcessada, registrarNoLog } from "@/lib/planilha";
-import { assinaturaValida, baixarMidia, enviarTexto, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
+import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
 // Ler um extrato inteiro pode levar um tempo
@@ -46,7 +46,11 @@ export async function POST(req: Request) {
   if (!assinaturaValida(corpo, req.headers.get("x-hub-signature-256"), exigirEnv("WHATSAPP_APP_SECRET"))) {
     return new Response("Assinatura inválida", { status: 401 });
   }
-  const mensagens = extrairMensagens(JSON.parse(corpo));
+  const dados = JSON.parse(corpo);
+  for (const falha of extrairFalhas(dados)) {
+    console.error("A Meta não conseguiu entregar a resposta para", falha.para, JSON.stringify(falha.erros));
+  }
+  const mensagens = extrairMensagens(dados);
   // Respondemos 200 na hora (senão a Meta reenvia) e processamos logo em seguida.
   after(async () => {
     for (const msg of mensagens) await processar(msg);
