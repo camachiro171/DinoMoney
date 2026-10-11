@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dividirEmParcelas, paraLinhas, resumir } from "@/lib/lancamentos";
+import { dividirEmParcelas, paraLinhas, resumir, tirarRepetidas } from "@/lib/lancamentos";
 import type { LancamentoClassificado } from "@/lib/classificador";
 import { categorias, usuario } from "./fixtures";
 
@@ -78,5 +78,42 @@ describe("resumir", () => {
     const texto = resumir(itens, itens.map((i) => paraLinhas(i, categorias, usuario, "2026-10-10")));
     expect(texto).toContain("Lancei 15 itens (saídas R$ 90,00, entradas R$ 0,00)");
     expect(texto).toContain("e mais 5 itens");
+  });
+});
+
+describe("tirarRepetidas", () => {
+  const compra = { ...base, pago_com: "Crédito", banco: "Nubank", valor: 50, data: "2026-10-05" };
+  const linhas = () => [paraLinhas(compra, categorias, usuario, "2026-10-10"), paraLinhas(base, categorias, usuario, "2026-10-10")];
+
+  it("pula a compra no cartão que já está na planilha, mesmo com a data escrita de outro jeito", () => {
+    const [cartao] = linhas()[0];
+    const [d, m, a] = cartao.data.split("/");
+    const r = tirarRepetidas(linhas(), [{ data: `${Number(d)}/${Number(m)}/${a}`, banco: "nubank", valor: -50 }]);
+    expect(r.puladas).toHaveLength(1);
+    expect(r.linhas[0]).toHaveLength(0);
+    expect(r.linhas[1]).toHaveLength(1);
+  });
+
+  it("valor diferente ou outro cartão não conta como repetida", () => {
+    const [cartao] = linhas()[0];
+    const r = tirarRepetidas(linhas(), [
+      { data: cartao.data, banco: "Nubank", valor: -49.9 },
+      { data: cartao.data, banco: "Itaú", valor: -50 },
+    ]);
+    expect(r.puladas).toHaveLength(0);
+  });
+
+  it("cada linha da planilha cobre só uma compra igual", () => {
+    const [cartao] = linhas()[0];
+    const duas = [linhas()[0], linhas()[0]];
+    const r = tirarRepetidas(duas, [{ data: cartao.data, banco: "Nubank", valor: -50 }]);
+    expect(r.puladas).toHaveLength(1);
+    expect(r.linhas.flat()).toHaveLength(1);
+  });
+
+  it("gasto fora do cartão nunca é pulado", () => {
+    const [pix] = linhas()[1];
+    const r = tirarRepetidas(linhas(), [{ data: pix.data, banco: "Itaú", valor: -6 }]);
+    expect(r.puladas).toHaveLength(0);
   });
 });
