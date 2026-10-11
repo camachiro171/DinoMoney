@@ -1,9 +1,9 @@
 import { after, NextResponse } from "next/server";
 import { responder } from "@/lib/bot";
-import { classificar } from "@/lib/classificador";
-import { cadastrarConta, definirCartao, removerConta, encontrarUsuarioCadastrado, prepararUsuario } from "@/lib/cadastro";
+import { dependenciasPadrao } from "@/lib/dependencias";
+import { encontrarUsuarioCadastrado, prepararUsuario } from "@/lib/cadastro";
 import { exigirEnv } from "@/lib/config";
-import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, jaProcessada, registrarNoLog } from "@/lib/planilha";
+import { jaProcessada } from "@/lib/planilha";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -28,18 +28,7 @@ async function processar(msg: MensagemRecebida) {
   if (await jaProcessada(cadastrado, msg.id)) return;
   try {
     const usuario = await prepararUsuario(cadastrado);
-    const texto = await responder(msg, usuario, {
-      buscarContexto,
-      classificar,
-      gravarNoFluxo,
-      lerComprasNoCartao,
-      cadastrarConta,
-      definirCartao,
-      removerConta,
-      registrarNoLog,
-      desfazerUltimo,
-      baixarMidia,
-    });
+    const texto = await responder(msg, usuario, { ...dependenciasPadrao, baixarMidia });
     await enviarTexto(msg.de, texto);
   } catch (erro) {
     console.error("Erro ao processar mensagem", msg.id, erro);

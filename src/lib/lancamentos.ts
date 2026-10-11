@@ -83,7 +83,7 @@ export function paraLinhas(
 }
 
 /** "5/11/2026", "05/11/26" ou "2026-11-05" viram "2026-11-05", para comparar datas escritas de jeitos diferentes. */
-function dataComparavel(texto: string): string {
+export function dataComparavel(texto: string): string {
   const t = texto.trim();
   const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
