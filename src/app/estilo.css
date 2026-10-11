@@ -154,14 +154,6 @@ button, input, textarea { font: inherit; color: inherit; }
 .comparacao td small { display: block; font-size: 11px; color: var(--suave); }
 .comparacao tfoot td { font-weight: 700; }
 
-.subtitulo {
-  display: flex;
-  justify-content: space-between;
-  margin: 0.8rem 0 0.2rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--suave);
-}
 
 .dica {
   margin: 0.8rem 0 0;
