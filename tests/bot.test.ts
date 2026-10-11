@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { responder, type Dependencias } from "@/lib/bot";
 import { RespostaGrandeDemais, type Classificacao } from "@/lib/classificador";
 import type { LinhaFluxo } from "@/lib/lancamentos";
+import type { LinhaExistente } from "@/lib/planilha";
 import { categorias, usuario } from "./fixtures";
 
-function fakes(classificacao?: Classificacao) {
+function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = []) {
   const gravadas: LinhaFluxo[] = [];
   const deps: Dependencias = {
     buscarContexto: vi.fn(async () => ({ categorias, exemplos: [] })),
@@ -13,6 +14,7 @@ function fakes(classificacao?: Classificacao) {
       gravadas.push(...linhas);
       return { linhas: linhas.map((_, i) => 10 + i), extras: false };
     }),
+    lerComprasNoCartao: vi.fn(async () => existentes),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
     baixarMidia: vi.fn(async () => ({ base64: "AAAA", mime: "image/jpeg" })),
@@ -52,6 +54,43 @@ describe("responder", () => {
     });
     expect(await responder(texto("extrato"), usuario, deps)).toContain("partes menores");
     expect(gravadas).toHaveLength(0);
+  });
+
+  describe("fatura do cartão", () => {
+    const fatura: Classificacao = {
+      resposta: "lancamentos",
+      pergunta: "",
+      lancamentos: [
+        { data: "2026-10-05", despesa: "Lanches", descricao: "lanche", nome: "OXXO", pago_com: "Crédito", banco: "Nubank", valor: 30, natureza: "saida", parcelas: 1 },
+        { data: "2026-10-06", despesa: "Lanches", descricao: "café", nome: "Padaria", pago_com: "Crédito", banco: "Nubank", valor: 12, natureza: "saida", parcelas: 1 },
+      ],
+    };
+    const pdf = { id: "w3", de: usuario.telefone, tipo: "documento" as const, mediaId: "m2", mime: "application/pdf" };
+
+    it("não lança de novo a compra que já foi mandada por foto", async () => {
+      const ja = { data: "10/11/2026", banco: "Nubank", valor: -30 };
+      const { deps, gravadas } = fakes(fatura, [ja]);
+      const r = await responder(pdf, usuario, deps);
+      expect(gravadas).toHaveLength(1);
+      expect(gravadas[0].nome).toBe("Padaria");
+      expect(r).toContain("Pulei 1 compra");
+    });
+
+    it("avisa quando todas já estavam na planilha, sem gravar", async () => {
+      const { deps, gravadas } = fakes(fatura, [
+        { data: "10/11/2026", banco: "Nubank", valor: -30 },
+        { data: "10/11/2026", banco: "Nubank", valor: -12 },
+      ]);
+      expect(await responder(pdf, usuario, deps)).toContain("já estavam na sua planilha");
+      expect(gravadas).toHaveLength(0);
+    });
+
+    it("texto digitado não passa pela checagem", async () => {
+      const { deps, gravadas } = fakes(fatura, [{ data: "10/11/2026", banco: "Nubank", valor: -30 }]);
+      await responder(texto("lanche 30 no nubank"), usuario, deps);
+      expect(deps.lerComprasNoCartao).not.toHaveBeenCalled();
+      expect(gravadas).toHaveLength(2);
+    });
   });
 
   it("desfazer apaga o último envio sem chamar a IA", async () => {

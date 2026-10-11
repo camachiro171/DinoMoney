@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
 import { encontrarUsuario, exigirEnv } from "@/lib/config";
-import { buscarContexto, desfazerUltimo, gravarNoFluxo, jaProcessada, registrarNoLog } from "@/lib/planilha";
+import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, jaProcessada, registrarNoLog } from "@/lib/planilha";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -30,6 +30,7 @@ async function processar(msg: MensagemRecebida) {
       buscarContexto,
       classificar,
       gravarNoFluxo,
+      lerComprasNoCartao,
       registrarNoLog,
       desfazerUltimo,
       baixarMidia,

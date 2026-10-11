@@ -127,6 +127,26 @@ export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Pro
   return { linhas: usadas, extras };
 }
 
+/** Compra no crédito já lançada no fluxo: data (vencimento), cartão e valor. */
+export interface LinhaExistente {
+  data: string;
+  banco: string;
+  valor: number;
+}
+
+/** Linhas do fluxo pagas no crédito, para não lançar de novo a mesma compra quando a fatura chegar. */
+export async function lerComprasNoCartao(usuario: Usuario): Promise<LinhaExistente[]> {
+  const res = await cliente().spreadsheets.values.get({
+    spreadsheetId: usuario.planilhaId,
+    range: `${aba(usuario.abaFluxo)}!A1:H${LIMITE_LINHAS}`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
+  });
+  return ((res.data.values ?? []) as unknown[][])
+    .filter((l) => String(l[5] ?? "").trim().toLowerCase() === "crédito" && typeof l[7] === "number")
+    .map((l) => ({ data: String(l[0] ?? ""), banco: String(l[6] ?? ""), valor: l[7] as number }));
+}
+
 async function garantirAba(usuario: Usuario, titulo: string, cabecalho: string[]): Promise<void> {
   const sheets = cliente();
   const info = await sheets.spreadsheets.get({

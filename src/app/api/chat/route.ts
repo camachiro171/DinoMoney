@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { usuarioLogado } from "@/lib/autenticacao";
 import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
-import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerResposta, registrarNoLog, salvarResposta } from "@/lib/planilha";
+import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, lerResposta, registrarNoLog, salvarResposta } from "@/lib/planilha";
 import { mensagemDoSite } from "@/lib/web";
 
 export const runtime = "nodejs";
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
         buscarContexto,
         classificar,
         gravarNoFluxo,
+        lerComprasNoCartao,
         registrarNoLog,
         desfazerUltimo,
         baixarMidia,

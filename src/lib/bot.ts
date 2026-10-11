@@ -1,8 +1,8 @@
 import type { Usuario } from "./config";
-import type { ContextoPlanilha, Gravacao } from "./planilha";
+import type { ContextoPlanilha, Gravacao, LinhaExistente } from "./planilha";
 import { RecusaDaIA, RespostaGrandeDemais, type Classificacao, type Entrada } from "./classificador";
 import { hojeEmSaoPaulo } from "./datas";
-import { CategoriaDesconhecida, paraLinhas, resumir, type LinhaFluxo } from "./lancamentos";
+import { CategoriaDesconhecida, paraLinhas, resumir, tirarRepetidas, type LinhaFluxo } from "./lancamentos";
 import type { MensagemRecebida } from "./whatsapp";
 
 /** Tudo que o bot precisa do mundo lá fora; nos testes trocamos por versões falsas. */
@@ -10,6 +10,7 @@ export interface Dependencias {
   buscarContexto(u: Usuario): Promise<ContextoPlanilha>;
   classificar(e: Entrada, c: ContextoPlanilha, u: Usuario, hoje: string): Promise<Classificacao>;
   gravarNoFluxo(u: Usuario, linhas: LinhaFluxo[]): Promise<Gravacao>;
+  lerComprasNoCartao(u: Usuario): Promise<LinhaExistente[]>;
   registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
   baixarMidia(mediaId: string): Promise<{ base64: string; mime: string }>;
@@ -50,6 +51,17 @@ async function paraEntrada(msg: MensagemRecebida, deps: Dependencias): Promise<E
     default:
       return "Não entendi esse tipo de mensagem. Me mande um texto, uma foto, um print ou o PDF do extrato.";
   }
+}
+
+const MAX_REPETIDAS_NO_AVISO = 5;
+
+function avisoDeRepetidas(puladas: LinhaFluxo[]): string {
+  const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const itens = puladas.slice(0, MAX_REPETIDAS_NO_AVISO).map((l) => `• ${reais(Math.abs(l.valor))}${l.nome ? ` em ${l.nome}` : ""} (${l.banco})`);
+  const resto = puladas.length - itens.length;
+  if (resto > 0) itens.push(`…e mais ${resto}.`);
+  const titulo = puladas.length === 1 ? "🔁 Pulei 1 compra que já estava na planilha:" : `🔁 Pulei ${puladas.length} compras que já estavam na planilha:`;
+  return [titulo, ...itens].join("\n");
 }
 
 /** Processa uma mensagem e devolve o texto a responder no WhatsApp. */
@@ -98,8 +110,26 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
     }
     throw erro;
   }
+
+  // Fatura ou print do cartão: o que a pessoa já mandou antes (por foto, por exemplo) não entra de novo.
+  // Texto digitado fica de fora, porque duas compras iguais no mesmo dia podem ser de verdade.
+  let lancamentos = resultado.lancamentos;
+  let puladas: LinhaFluxo[] = [];
+  if (entrada.tipo !== "texto" && linhas.flat().some((l) => l.pagoCom === "Crédito")) {
+    const filtrado = tirarRepetidas(linhas, await deps.lerComprasNoCartao(usuario));
+    puladas = filtrado.puladas;
+    lancamentos = lancamentos.filter((_, i) => filtrado.linhas[i].length > 0);
+    linhas = filtrado.linhas.filter((ls) => ls.length > 0);
+  }
+  if (linhas.length === 0) {
+    return puladas.length === 1
+      ? "Essa compra já estava na sua planilha, então não lancei de novo."
+      : `Essas ${puladas.length} compras já estavam na sua planilha, então não lancei de novo.`;
+  }
+
   const gravacao = await deps.gravarNoFluxo(usuario, linhas.flat());
-  const texto = resumir(resultado.lancamentos, linhas);
+  let texto = resumir(lancamentos, linhas);
+  if (puladas.length > 0) texto += `\n\n${avisoDeRepetidas(puladas)}`;
   await deps.registrarNoLog(usuario, msg.id, gravacao, texto.split("\n")[1] ?? "");
   return texto;
 }

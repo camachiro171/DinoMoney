@@ -1,4 +1,5 @@
 import type { Usuario } from "./config";
+import type { LinhaExistente } from "./planilha";
 import { ehRenda, type Categoria } from "./categorias";
 import { FORMAS_PAGAMENTO, type LancamentoClassificado } from "./classificador";
 import { dataDaParcelaMensal, dataValida, paraPlanilha, vencimentoDaParcela, type DataISO } from "./datas";
@@ -79,6 +80,49 @@ export function paraLinhas(
       categoria,
     };
   });
+}
+
+/** "5/11/2026", "05/11/26" ou "2026-11-05" viram "2026-11-05", para comparar datas escritas de jeitos diferentes. */
+function dataComparavel(texto: string): string {
+  const t = texto.trim();
+  const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!br) return t;
+  const ano = br[3].length === 2 ? `20${br[3]}` : br[3];
+  return `${ano}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+}
+
+/**
+ * Tira as compras no crédito que já estão na planilha (mesmo cartão, mesmo vencimento e mesmo valor),
+ * para a fatura não contar de novo o que a pessoa já mandou por foto. Cada linha da planilha só
+ * cobre uma linha nova: duas compras iguais na fatura e uma na planilha fazem entrar só uma.
+ * Devolve as linhas que sobram de cada lançamento e quantas foram puladas.
+ */
+export function tirarRepetidas(
+  linhas: LinhaFluxo[][],
+  existentes: LinhaExistente[],
+): { linhas: LinhaFluxo[][]; puladas: LinhaFluxo[] } {
+  const chave = (data: string, banco: string, valor: number) =>
+    `${dataComparavel(data)}|${comparavel(banco)}|${centavos(Math.abs(valor))}`;
+  const disponiveis = new Map<string, number>();
+  for (const e of existentes) {
+    const k = chave(e.data, e.banco, e.valor);
+    disponiveis.set(k, (disponiveis.get(k) ?? 0) + 1);
+  }
+  const puladas: LinhaFluxo[] = [];
+  const restantes = linhas.map((ls) =>
+    ls.filter((l) => {
+      if (l.pagoCom !== "Crédito") return true;
+      const k = chave(l.data, l.banco, l.valor);
+      const n = disponiveis.get(k) ?? 0;
+      if (n === 0) return true;
+      disponiveis.set(k, n - 1);
+      puladas.push(l);
+      return false;
+    }),
+  );
+  return { linhas: restantes, puladas };
 }
 
 /** O WhatsApp corta mensagens longas; num extrato inteiro mostramos só os primeiros itens. */
