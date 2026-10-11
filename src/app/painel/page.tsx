@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { usuarioLogado } from "@/lib/autenticacao";
 import { prepararUsuario } from "@/lib/cadastro";
 import { hojeEmSaoPaulo } from "@/lib/datas";
+import { sincronizarFaturas } from "@/lib/faturas";
 import { lerFluxo, lerInvestimentos, lerMetas } from "@/lib/metas";
 import { montarPainel } from "@/lib/painel";
 import { VerPainel } from "./ver-painel";
@@ -16,6 +17,7 @@ export default async function PaginaPainel({ searchParams }: { searchParams: Pro
   if (!logado) redirect("/");
   const usuario = await prepararUsuario(logado);
   const [fluxo, metas, investimentos] = await Promise.all([lerFluxo(usuario), lerMetas(usuario), lerInvestimentos(usuario)]);
+  await sincronizarFaturas(usuario, fluxo);
   const busca = await searchParams;
   const p = montarPainel(fluxo, usuario, metas, hojeEmSaoPaulo(), {
     banco: busca.banco,

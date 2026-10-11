@@ -31,6 +31,8 @@ export interface Dependencias {
   substituirPrevisto(u: Usuario, numeroLinha: number, linha: LinhaFluxo): Promise<void>;
   registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
+  /** Atualiza o "Pagamento do cartão" previsto com a fatura de verdade. */
+  sincronizarFaturas(u: Usuario): Promise<void>;
   lerConversa(u: Usuario, agora?: Date): Promise<ConversaGuardada>;
   guardarTurnos(u: Usuario, turnos: { quem: "eu" | "dino"; texto: string; proposta?: string }[], agora?: Date): Promise<void>;
   conversar(texto: string, historico: Turno[], contexto: ContextoPlanilha, u: Usuario, hoje: string, retrato: string): Promise<RespostaDaConversa>;
@@ -427,6 +429,7 @@ async function lancar(
   const novas = await cadastrarNovas(linhas.flat(), usuario, deps);
   const gravacao = paraGravar.length > 0 ? await deps.gravarNoFluxo(usuario, paraGravar) : { linhas: [], extras: false };
   gravacao.linhas = [...substituidas, ...gravacao.linhas];
+  if (linhas.flat().some((l) => l.pagoCom === "Crédito")) await deps.sincronizarFaturas(usuario);
   let texto = resumir(lancamentos, linhas);
   if (substituidas.length > 0) {
     texto += `\n\n✔️ ${substituidas.length === 1 ? "Esse lançamento substituiu o previsto" : `${substituidas.length} lançamentos substituíram os previstos`} do mês.`;

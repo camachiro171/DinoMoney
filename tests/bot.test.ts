@@ -32,6 +32,7 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [],
     removerConta: vi.fn(async (_u: unknown, nome: string) => (nome.toLowerCase() === "inter" ? "Inter" : undefined)),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
+    sincronizarFaturas: vi.fn(async () => {}),
     lerConversa: vi.fn(async () => {
       const ultima = falas.at(-1);
       return { turnos: falas.map(({ quem, texto }) => ({ quem, texto })), ...(ultima?.quem === "dino" && ultima.proposta ? { proposta: ultima.proposta } : {}) };

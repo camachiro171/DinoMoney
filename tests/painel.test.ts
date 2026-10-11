@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { investimentosDasLinhas, type LinhaDoFluxo } from "@/lib/metas";
-import { montarPainel, pagaFaturaSeparado } from "@/lib/painel";
+import { montarPainel, pagaFaturaSeparado, previsoesDeFatura } from "@/lib/painel";
 
 let n = 2;
 const l = (
@@ -192,5 +192,31 @@ describe("limite do cartão (pagamentos feitos entre o fechamento e o vencimento
   it("não confunde um gasto chamado 'Pagar fatura' com pagamento do cartão", () => {
     const comLembrete = [...fatura, l("2026-09-14", -25.82, "Lanches", "Itaú", "Pix", "Pagar fatura")];
     expect(montarPainel(comLembrete, usuario, [], HOJE).cartoes[0].emAberto).toBe(450);
+  });
+});
+
+describe("previsoesDeFatura (pagamento previsto vira a fatura de verdade)", () => {
+  const dados = [
+    l("2026-09-15", -300, "Supermercado", "Nubank", "Crédito"),
+    l("2026-09-14", -300, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-10-15", -700, "Supermercado", "Nubank", "Crédito"),
+    l("2026-10-10", -650, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-10-15", -400, "Pagamento", "Nubank", "Previsão", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-11-15", -80, "Supermercado", "Nubank", "Crédito"),
+    l("2026-11-15", -400, "Pagamento", "Nubank", "Previsão", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-12-15", -400, "Pagamento", "Nubank", "Previsão", "Pagamento do Cartão", "Entre Contas"),
+  ];
+
+  it("mostra o que falta pagar em cada vencimento e zera os que já estão pagos ou sem compras", () => {
+    const muda = previsoesDeFatura(dados, HOJE, usuario);
+    // 15/10: 1000 de compras − 950 pagos = 50, e a fatura de 15/10 teve 700 → 50
+    // 15/11: sobra 0 das anteriores + 80 de compras; mas as de 15/10 ainda devem 50, então 130 − 80... limitado às compras do dia → 80
+    const por = Object.fromEntries(muda.map((m) => [m.linha, m.valor]));
+    expect(Object.values(por)).toEqual([-50, -80, 0]);
+  });
+
+  it("não devolve linha cujo valor já está certo", () => {
+    const certo = dados.map((d) => (d.pagoCom === "Previsão" ? { ...d, valor: d.data === "2026-10-15" ? -50 : d.data === "2026-11-15" ? -80 : 0 } : d));
+    expect(previsoesDeFatura(certo, HOJE, usuario)).toEqual([]);
   });
 });

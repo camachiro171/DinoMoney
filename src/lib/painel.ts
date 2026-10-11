@@ -185,6 +185,38 @@ export function saldosPorConta(fluxo: LinhaDoFluxo[], hoje: DataISO, separado = 
     .sort((a, b) => b.valor - a.valor);
 }
 
+/**
+ * Valor que ainda falta pagar em cada "Pagamento do cartão" previsto, para a linha da planilha mostrar a fatura
+ * de verdade em vez de um chute. A fatura do vencimento é o que sobra das compras até aquela data depois de
+ * tudo o que já foi pago (nunca mais que as compras daquele vencimento, para não contar duas vezes).
+ * Devolve só as linhas cujo valor mudou.
+ */
+export function previsoesDeFatura(
+  fluxo: LinhaDoFluxo[],
+  hoje: DataISO,
+  usuario: Pick<Usuario, "cartoes">,
+): { linha: number; valor: number }[] {
+  const cadastrados = usuario.cartoes.map((c) => c.nome);
+  const doCartao = (l: LinhaDoFluxo) => (cadastrados.length === 1 ? cadastrados[0] : cartaoDaLinha(l.banco ?? "", cadastrados));
+  const compras = fluxo.filter((l) => ehCredito(l) && !(l.valor > 0 && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao))));
+  const pagos = fluxo.filter((l) => !ehPrevista(l) && !ehCredito(l) && ehPagamentoDeCartao(l) && l.data <= hoje);
+  const previstos = fluxo.filter((l) => ehPrevista(l) && !ehCredito(l) && PAGAMENTO_NA_DESCRICAO.test(comparavel(l.descricao)));
+
+  const mudancas: { linha: number; valor: number }[] = [];
+  for (const prev of previstos) {
+    const cartao = doCartao(prev);
+    if (!cartao) continue;
+    const dele = compras.filter((l) => doCartao(l) === cartao);
+    const ate = -somar(dele.filter((l) => l.data <= prev.data));
+    const nesse = -somar(dele.filter((l) => l.data === prev.data));
+    const jaPago = -somar(pagos.filter((l) => doCartao(l) === cartao));
+    const fatura = centavos(Math.max(0, Math.min(ate - jaPago, nesse)));
+    const valor = fatura > 0 ? -fatura : 0;
+    if (Math.abs(valor - prev.valor) >= 0.01) mudancas.push({ linha: prev.linha, valor });
+  }
+  return mudancas;
+}
+
 /** Resumo dos cartões: próxima fatura, o que já foi pago antes do vencimento e o limite livre. */
 export function resumoDosCartoes(
   fluxo: LinhaDoFluxo[],
