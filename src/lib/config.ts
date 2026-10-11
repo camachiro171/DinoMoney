@@ -23,6 +23,8 @@ const UsuarioSchema = z.object({
   /** Contas bancárias e carteiras (coluna "Banco" da planilha). A aba "Minhas contas" da planilha tem prioridade. */
   contas: z.array(z.string().min(1)).default([]),
   cartoes: z.array(CartaoSchema).default([]),
+  /** Contas do tipo Investimento (caixinhas, cofrinhos): também estão em `contas`, mas o painel mostra à parte. */
+  guardados: z.array(z.string().min(1)).optional(),
 });
 
 export type Cartao = z.infer<typeof CartaoSchema>;

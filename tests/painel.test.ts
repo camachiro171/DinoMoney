@@ -153,3 +153,19 @@ describe("investimentosDasLinhas", () => {
     expect(investimentosDasLinhas(linhas)).toEqual([{ nome: "Cofrinho PicPay", banco: "PicPay", tipo: "Cofrinhos", valor: 605.45 }]);
   });
 });
+
+describe("montarPainel (caixinhas e cofrinhos)", () => {
+  const fluxo: LinhaDoFluxo[] = [
+    l("2026-10-01", 1000, "Salário", "Nubank"),
+    l("2026-10-05", -1000, "Transferencia entre contas", "Nubank"),
+    l("2026-10-05", 1000, "Transferencia entre contas", "Caixinha Nubank"),
+    l("2026-10-10", 4, "Rendimento", "Caixinha Nubank", "Rendimento"),
+  ];
+  const p = montarPainel(fluxo, { contas: ["Nubank", "Caixinha Nubank"], cartoes: [], guardados: ["Caixinha Nubank"] }, [], HOJE);
+
+  it("esconde a conta zerada, marca a caixinha como guardada e mantém o dinheiro disponível", () => {
+    expect(p.saldos).toEqual([{ conta: "Caixinha Nubank", valor: 1004, guardado: true }]);
+    expect(p.saldoHoje).toBe(1004);
+    expect(p.alerta).toBeUndefined();
+  });
+});

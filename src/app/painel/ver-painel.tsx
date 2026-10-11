@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Investimento } from "@/lib/metas";
-import { OPCOES_MESES, type Barra, type Divida, type Filtro, type Painel } from "@/lib/painel";
+import { OPCOES_MESES, type Barra, type Divida, type Filtro, type Painel, type Saldo } from "@/lib/painel";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -129,9 +129,32 @@ function Compromissos({ titulo, total, itens, vazio }: { titulo: string; total: 
   );
 }
 
+function ListaDeSaldos({ titulo, saldos }: { titulo?: string; saldos: Saldo[] }) {
+  if (saldos.length === 0) return null;
+  return (
+    <>
+      {titulo && (
+        <h3 className="subtitulo">
+          {titulo} <span>{reais(saldos.reduce((t, s) => t + s.valor, 0))}</span>
+        </h3>
+      )}
+      <ul className="lista">
+        {saldos.map((s) => (
+          <li key={s.conta}>
+            <span>{s.conta}</span>
+            <span className={s.valor < 0 ? "negativo" : ""}>{reais(s.valor)}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel; investimentos?: Investimento[] }) {
   const f = p.filtro;
   const hojeIndice = p.barras.findIndex((b) => b.futuro) - 1;
+  const guardados = p.saldos.filter((s) => s.guardado);
+  const nasContas = p.saldos.filter((s) => !s.guardado);
   const totalInvestido = investimentos?.reduce((s, i) => s + i.valor, 0) ?? 0;
   const atrasadas = p.aPagar.filter((c) => c.atrasada);
 
@@ -236,14 +259,15 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
         <section className="bloco">
           <h2>Saldos de hoje</h2>
           <p className="destaque">{reais(p.saldoHoje)}</p>
-          <ul className="lista">
-            {p.saldos.map((s) => (
-              <li key={s.conta}>
-                <span>{s.conta}</span>
-                <span className={s.valor < 0 ? "negativo" : ""}>{reais(s.valor)}</span>
-              </li>
-            ))}
-          </ul>
+          {guardados.length > 0 ? (
+            <>
+              <ListaDeSaldos titulo="Nas contas" saldos={nasContas} />
+              <ListaDeSaldos titulo="Guardado em caixinhas e cofrinhos" saldos={guardados} />
+              <p className="vazio">O guardado conta como dinheiro disponível, porque pode ser resgatado na hora.</p>
+            </>
+          ) : (
+            <ListaDeSaldos saldos={p.saldos} />
+          )}
         </section>
 
         <section className="bloco">
@@ -304,7 +328,10 @@ export function VerPainel({ nome, p, investimentos }: { nome: string; p: Painel;
                   </li>
                 ))}
               </ul>
-              <p className="vazio">Valor atualizado da aba Investimentos. Não entra no saldo acima.</p>
+              <p className="vazio">
+                Valor atualizado da aba Investimentos.
+                {guardados.length > 0 ? " Caixinhas e cofrinhos aparecem também em Saldos de hoje." : " Não entra no saldo acima."}
+              </p>
             </>
           )}
         </section>

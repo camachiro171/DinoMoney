@@ -26,6 +26,8 @@ export interface Filtro {
 export interface Saldo {
   conta: string;
   valor: number;
+  /** Caixinha ou cofrinho (conta do tipo Investimento): dinheiro guardado, mas que pode ser resgatado. */
+  guardado?: boolean;
 }
 
 export interface Barra {
@@ -453,13 +455,16 @@ const opcao = (n: number | undefined, padrao: number) => (OPCOES_MESES.includes(
 
 export function montarPainel(
   fluxo: LinhaDoFluxo[],
-  usuario: Pick<Usuario, "cartoes" | "contas">,
+  usuario: Pick<Usuario, "cartoes" | "contas" | "guardados">,
   metas: Meta[],
   hoje: DataISO,
   pedido: Partial<Filtro> = {},
 ): Painel {
   const separado = pagaFaturaSeparado(fluxo);
-  const saldosTodos = saldosPorConta(fluxo, hoje, separado);
+  const guardados = new Set((usuario.guardados ?? []).map(comparavel));
+  const saldosTodos = saldosPorConta(fluxo, hoje, separado).map((s) =>
+    guardados.has(comparavel(s.conta)) ? { ...s, guardado: true } : s,
+  );
   const bancos = usuario.contas.length > 0 ? usuario.contas : saldosTodos.map((s) => s.conta);
   const banco = bancos.find((b) => comparavel(b) === comparavel(pedido.banco ?? ""));
   const mesAtual = hoje.slice(0, 7);
