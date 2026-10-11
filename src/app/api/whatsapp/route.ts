@@ -1,8 +1,6 @@
 import { after, NextResponse } from "next/server";
-import { responder } from "@/lib/bot";
-import { classificar } from "@/lib/classificador";
 import { encontrarUsuario, exigirEnv } from "@/lib/config";
-import { buscarContexto, desfazerUltimo, gravarNoFluxo, jaProcessada, registrarNoLog } from "@/lib/planilha";
+import { processarMensagem } from "@/lib/processar";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -24,21 +22,7 @@ async function processar(msg: MensagemRecebida) {
     await enviarTexto(msg.de, "Oi! Este número ainda não está cadastrado no DinoMoney. Fale com seu mentor para liberar o acesso.");
     return;
   }
-  if (await jaProcessada(usuario, msg.id)) return;
-  try {
-    const texto = await responder(msg, usuario, {
-      buscarContexto,
-      classificar,
-      gravarNoFluxo,
-      registrarNoLog,
-      desfazerUltimo,
-      baixarMidia,
-    });
-    await enviarTexto(msg.de, texto);
-  } catch (erro) {
-    console.error("Erro ao processar mensagem", msg.id, erro);
-    await enviarTexto(msg.de, "Tive um problema para lançar isso agora 😕 Tenta de novo daqui a pouco?");
-  }
+  await processarMensagem(msg, usuario, { enviar: enviarTexto, baixarMidia });
 }
 
 export async function POST(req: Request) {
