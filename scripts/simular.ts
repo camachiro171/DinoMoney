@@ -52,7 +52,7 @@ if (args.length === 0) {
   process.exit(1);
 }
 const hoje = hojeEmSaoPaulo();
-const resultado = await classificar(lerEntrada(args), categorias, usuario, hoje);
+const resultado = await classificar(lerEntrada(args), { categorias, exemplos: [] }, usuario, hoje);
 console.log("IA entendeu:", JSON.stringify(resultado, null, 2));
 if (resultado.lancamentos.length) {
   const linhas = resultado.lancamentos.map((l) => paraLinhas(l, categorias, usuario, hoje));

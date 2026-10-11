@@ -1,6 +1,6 @@
 import { google, type sheets_v4 } from "googleapis";
 import { exigirEnv, type Usuario } from "./config";
-import { lerCategorias, type Categoria } from "./categorias";
+import { categoriasDoHistorico, exemplosDoHistorico, lerCategorias, type Categoria } from "./categorias";
 import type { LinhaFluxo } from "./lancamentos";
 
 const ABA_LOG = "DinoMoney_log";
@@ -25,33 +25,64 @@ function aba(nome: string): string {
   return `'${nome.replace(/'/g, "''")}'`;
 }
 
-export async function buscarCategorias(usuario: Usuario): Promise<Categoria[]> {
-  const res = await cliente().spreadsheets.values.get({
+export interface ContextoPlanilha {
+  categorias: Categoria[];
+  /** "Estabelecimento → Despesa" dos lançamentos recentes, para a IA seguir o padrão da pessoa. */
+  exemplos: string[];
+}
+
+/** Categorias da aba Contas, mais as que a pessoa já usa no fluxo, e exemplos recentes de classificação. */
+export async function buscarContexto(usuario: Usuario): Promise<ContextoPlanilha> {
+  const res = await cliente().spreadsheets.values.batchGet({
     spreadsheetId: usuario.planilhaId,
-    range: `${aba(usuario.abaCategorias)}!A:C`,
+    ranges: [`${aba(usuario.abaCategorias)}!A:C`, `${aba(usuario.abaFluxo)}!B1:E${LIMITE_LINHAS}`],
   });
-  return lerCategorias((res.data.values ?? []) as string[][]);
+  const [contas, fluxo] = (res.data.valueRanges ?? []).map((v) => (v.values ?? []) as string[][]);
+  const daAba = lerCategorias(contas ?? []);
+  return {
+    categorias: [...daAba, ...categoriasDoHistorico(fluxo ?? [], daAba)],
+    exemplos: exemplosDoHistorico(fluxo ?? []),
+  };
 }
 
 /**
- * Primeira linha (número da planilha, 1 = cabeçalho) sem DATA e sem DESPESA.
- * As colunas TIPO (B) e CAIXA (I) são fórmulas já puxadas para baixo, então não contam.
+ * Linha logo abaixo do último lançamento (última linha com DATA ou DESPESA preenchida).
+ * Linhas vazias no meio ou no topo são ignoradas, para o lançamento novo ir sempre para o fim.
+ * As colunas TIPO (B) e CAIXA (I) podem ter fórmulas puxadas para baixo, então não contam.
  */
-export function proximaLinhaVazia(colA: string[][], colC: string[][], aPartirDe = 2): number {
+export function proximaLinhaVazia(colA: string[][], colC: string[][]): number {
   const total = Math.max(colA.length, colC.length);
-  for (let i = aPartirDe - 1; i < total; i++) {
+  for (let i = total - 1; i >= 1; i--) {
     const a = colA[i]?.[0]?.toString().trim() ?? "";
     const c = colC[i]?.[0]?.toString().trim() ?? "";
-    if (!a && !c) return i + 1;
+    if (a || c) return i + 2;
   }
-  return Math.max(total + 1, aPartirDe);
+  return 2;
+}
+
+/**
+ * O que gravar em TIPO (B) e CAIXA (I) de uma linha nova.
+ * Se a planilha já tem fórmula ali (como na planilha modelo), não mexemos.
+ * Se está vazio (planilhas em que a pessoa digita o TIPO), preenchemos o TIPO e a fórmula do saldo acumulado.
+ */
+export function complementos(n: number, tipo: string, atualB: string, atualI: string): { b?: string; i?: string } {
+  const r: { b?: string; i?: string } = {};
+  if (!atualB.trim()) r.b = tipo;
+  if (!atualI.trim()) r.i = n <= 2 ? `=H${n}` : `=H${n}+I${n - 1}`;
+  return r;
 }
 
 /**
  * Grava as linhas no fluxo de caixa, preenchendo DATA e as colunas C a H.
  * TIPO (B) e CAIXA (I) ficam com as fórmulas da planilha. Devolve os números das linhas usadas.
  */
-export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Promise<number[]> {
+export interface Gravacao {
+  linhas: number[];
+  /** true se o robô também preencheu TIPO e CAIXA (planilha sem fórmula nessas colunas). */
+  extras: boolean;
+}
+
+export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Promise<Gravacao> {
   const sheets = cliente();
   const range = (col: string) => `${aba(usuario.abaFluxo)}!${col}1:${col}${LIMITE_LINHAS}`;
   const res = await sheets.spreadsheets.values.batchGet({
@@ -59,14 +90,23 @@ export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Pro
     ranges: [range("A"), range("C")],
   });
   const [colA, colC] = (res.data.valueRanges ?? []).map((v) => (v.values ?? []) as string[][]);
+  const primeira = proximaLinhaVazia(colA ?? [], colC ?? []);
+  const ultima = primeira + linhas.length - 1;
+
+  // Fórmulas já existentes em TIPO e CAIXA nas linhas que vamos usar
+  const atuais = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: usuario.planilhaId,
+    ranges: [`${aba(usuario.abaFluxo)}!B${primeira}:B${ultima}`, `${aba(usuario.abaFluxo)}!I${primeira}:I${ultima}`],
+    valueRenderOption: "FORMULA",
+  });
+  const [colB, colI] = (atuais.data.valueRanges ?? []).map((v) => (v.values ?? []) as string[][]);
 
   const usadas: number[] = [];
+  let extras = false;
   const data: sheets_v4.Schema$ValueRange[] = [];
-  let proxima = 2;
-  for (const linha of linhas) {
-    const n = proximaLinhaVazia(colA ?? [], colC ?? [], proxima);
+  linhas.forEach((linha, k) => {
+    const n = primeira + k;
     usadas.push(n);
-    proxima = n + 1;
     data.push(
       { range: `${aba(usuario.abaFluxo)}!A${n}`, values: [[linha.data]] },
       {
@@ -74,12 +114,16 @@ export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Pro
         values: [[linha.despesa, linha.descricao, linha.nome, linha.pagoCom, linha.banco, linha.valor]],
       },
     );
-  }
+    const extra = complementos(n, linha.categoria.tipo, String(colB?.[k]?.[0] ?? ""), String(colI?.[k]?.[0] ?? ""));
+    if (extra.b !== undefined || extra.i !== undefined) extras = true;
+    if (extra.b !== undefined) data.push({ range: `${aba(usuario.abaFluxo)}!B${n}`, values: [[extra.b]] });
+    if (extra.i !== undefined) data.push({ range: `${aba(usuario.abaFluxo)}!I${n}`, values: [[extra.i]] });
+  });
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: usuario.planilhaId,
     requestBody: { valueInputOption: "USER_ENTERED", data },
   });
-  return usadas;
+  return { linhas: usadas, extras };
 }
 
 async function garantirAbaLog(usuario: Usuario): Promise<void> {
@@ -95,9 +139,9 @@ async function garantirAbaLog(usuario: Usuario): Promise<void> {
   });
   await sheets.spreadsheets.values.update({
     spreadsheetId: usuario.planilhaId,
-    range: `${ABA_LOG}!A1:F1`,
+    range: `${ABA_LOG}!A1:G1`,
     valueInputOption: "RAW",
-    requestBody: { values: [["quando", "mensagem_id", "aba", "linhas", "resumo", "desfeito"]] },
+    requestBody: { values: [["quando", "mensagem_id", "aba", "linhas", "resumo", "desfeito", "tipo_e_caixa"]] },
   });
 }
 
@@ -107,13 +151,14 @@ interface RegistroLog {
   aba: string;
   linhas: number[];
   desfeito: boolean;
+  extras: boolean;
 }
 
 async function lerLog(usuario: Usuario): Promise<RegistroLog[]> {
   await garantirAbaLog(usuario);
   const res = await cliente().spreadsheets.values.get({
     spreadsheetId: usuario.planilhaId,
-    range: `${ABA_LOG}!A:F`,
+    range: `${ABA_LOG}!A:G`,
   });
   return ((res.data.values ?? []) as string[][]).slice(1).map((l, i) => ({
     linhaLog: i + 2,
@@ -121,6 +166,7 @@ async function lerLog(usuario: Usuario): Promise<RegistroLog[]> {
     aba: l[2] ?? "",
     linhas: (l[3] ?? "").split(",").filter(Boolean).map(Number),
     desfeito: (l[5] ?? "") === "sim",
+    extras: (l[6] ?? "") === "sim",
   }));
 }
 
@@ -132,16 +178,18 @@ export async function jaProcessada(usuario: Usuario, mensagemId: string): Promis
 export async function registrarNoLog(
   usuario: Usuario,
   mensagemId: string,
-  linhas: number[],
+  gravacao: Gravacao,
   resumo: string,
 ): Promise<void> {
   await garantirAbaLog(usuario);
   await cliente().spreadsheets.values.append({
     spreadsheetId: usuario.planilhaId,
-    range: `${ABA_LOG}!A:F`,
+    range: `${ABA_LOG}!A:G`,
     valueInputOption: "RAW",
     requestBody: {
-      values: [[new Date().toISOString(), mensagemId, usuario.abaFluxo, linhas.join(","), resumo, ""]],
+      values: [
+        [new Date().toISOString(), mensagemId, usuario.abaFluxo, gravacao.linhas.join(","), resumo, "", gravacao.extras ? "sim" : ""],
+      ],
     },
   });
 }
@@ -155,7 +203,10 @@ export async function desfazerUltimo(usuario: Usuario): Promise<number> {
   await sheets.spreadsheets.values.batchClear({
     spreadsheetId: usuario.planilhaId,
     requestBody: {
-      ranges: ultimo.linhas.flatMap((n) => [`${aba(ultimo.aba)}!A${n}`, `${aba(ultimo.aba)}!C${n}:H${n}`]),
+      // Só limpa TIPO e CAIXA se foi o robô que preencheu; senão são fórmulas da planilha.
+      ranges: ultimo.linhas.flatMap((n) =>
+        ultimo.extras ? [`${aba(ultimo.aba)}!A${n}:I${n}`] : [`${aba(ultimo.aba)}!A${n}`, `${aba(ultimo.aba)}!C${n}:H${n}`],
+      ),
     },
   });
   await sheets.spreadsheets.values.update({

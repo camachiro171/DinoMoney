@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
 import { encontrarUsuario, exigirEnv } from "@/lib/config";
-import { buscarCategorias, desfazerUltimo, gravarNoFluxo, jaProcessada, registrarNoLog } from "@/lib/planilha";
+import { buscarContexto, desfazerUltimo, gravarNoFluxo, jaProcessada, registrarNoLog } from "@/lib/planilha";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ async function processar(msg: MensagemRecebida) {
   if (await jaProcessada(usuario, msg.id)) return;
   try {
     const texto = await responder(msg, usuario, {
-      buscarCategorias,
+      buscarContexto,
       classificar,
       gravarNoFluxo,
       registrarNoLog,

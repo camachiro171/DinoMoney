@@ -13,8 +13,9 @@ describe("classificador", () => {
     expect(() => JSON.stringify(zodOutputFormat(schema))).not.toThrow();
   });
   it("o prompt traz categorias, contas e cartões", () => {
-    const s = montarSistema(categorias, usuario);
+    const s = montarSistema({ categorias, exemplos: ["Efinc → Educação Financeira"] }, usuario);
     expect(s).toContain("Alimentação: Padaria | Supermercado");
     expect(s).toContain("Nubank (fecha dia 3, vence dia 10)");
+    expect(s).toContain("Efinc → Educação Financeira");
   });
 });

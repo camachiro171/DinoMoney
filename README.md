@@ -6,8 +6,8 @@ Gestão financeira pessoal pelo WhatsApp. A pessoa manda um texto, uma foto de c
 
 - Recebe mensagens no WhatsApp (API oficial da Meta).
 - Entende **texto**, **foto/print** e **PDF** (extrato ou fatura com vários lançamentos de uma vez). Áudio ainda não.
-- Classifica usando as categorias da aba **Contas** da planilha de cada pessoa (Essencial / Necessária / Supérflua / Renda).
-- Grava na aba **Cashflow** da planilha Google da pessoa, preenchendo DATA, DESPESA, Descrição, NOME, PAGO COM, Banco e VALOR. As colunas TIPO e CAIXA continuam com as fórmulas da planilha.
+- Classifica usando as categorias da aba **Contas** da planilha de cada pessoa (Essencial / Necessária / Supérflua / Renda), mais as categorias próprias que a pessoa já usa no fluxo. Também olha os lançamentos recentes para repetir o jeito como ela classifica cada estabelecimento.
+- Grava na aba **Cashflow** da planilha Google da pessoa, logo abaixo do último lançamento, preenchendo DATA, DESPESA, Descrição, NOME, PAGO COM, Banco e VALOR. Se TIPO e CAIXA já têm fórmula, ficam como estão; se estão vazios, o robô preenche o TIPO e a fórmula do saldo acumulado.
 - **Cartão de crédito**: a compra entra no caixa na data de vencimento da fatura, considerando o dia de fechamento. Parcelado vira uma linha por parcela.
 - Saída sempre negativa, entrada sempre positiva, Renda sempre positiva.
 - Responde no WhatsApp confirmando o que lançou. A pessoa pode mandar **desfazer** para apagar o último envio.

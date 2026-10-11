@@ -3,6 +3,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { Usuario } from "./config";
 import { descreverCategorias, type Categoria } from "./categorias";
+import type { ContextoPlanilha } from "./planilha";
 
 export const FORMAS_PAGAMENTO = [
   "Pix",
@@ -46,7 +47,7 @@ export function montarSchema(categorias: Categoria[], usuario: Usuario) {
 export type Classificacao = z.infer<ReturnType<typeof montarSchema>>;
 export type LancamentoClassificado = Classificacao["lancamentos"][number];
 
-export function montarSistema(categorias: Categoria[], usuario: Usuario): string {
+export function montarSistema({ categorias, exemplos }: ContextoPlanilha, usuario: Usuario): string {
   const cartoes = usuario.cartoes.length
     ? usuario.cartoes.map((c) => `${c.nome} (fecha dia ${c.fechamento}, vence dia ${c.vencimento})`).join("; ")
     : "nenhum cadastrado";
@@ -57,13 +58,13 @@ Sua tarefa é extrair cada lançamento e classificá-lo numa das categorias abai
 Categorias (Grupo > Tipo > Despesa). Use no campo "despesa" exatamente um dos itens:
 ${descreverCategorias(categorias)}
 
-Contas de ${usuario.nome}: ${usuario.contas.join(", ")}.
+${exemplos.length ? `Como ${usuario.nome} costuma classificar (estabelecimento → despesa). Siga esse padrão quando o estabelecimento ou o tipo de gasto se repetir:\n${exemplos.join("\n")}\n\n` : ""}Contas de ${usuario.nome}: ${usuario.contas.join(", ")}.
 Cartões de crédito: ${cartoes}.
 
 Regras:
 - Um extrato ou fatura pode ter muitos lançamentos: devolva todos, um por linha, e ignore saldos, totais e o próprio pagamento da fatura.
 - "valor" é sempre positivo; "natureza" diz se o dinheiro saiu ou entrou. Estornos e devoluções são "entrada" na mesma categoria do gasto original.
-- Transferência entre contas da própria pessoa, aplicação em cofrinho ou investimento e resgate não são gasto nem renda: use a categoria de transferência entre contas se existir; se não existir, pergunte.
+- Transferência entre contas da própria pessoa, aplicação em cofrinho ou investimento e resgate não são gasto nem renda: use a categoria de transferência entre contas se existir; se não existir, pergunte. Quando as duas contas forem conhecidas, devolva dois lançamentos: a saída na conta de origem e a entrada na conta de destino, com o mesmo valor.
 - Compra no cartão de crédito: pago_com "Crédito" e banco = nome do cartão. Se a pessoa disser "em 3x", parcelas = 3, com valor = total da compra.
 - Descrições de extrato como "PAY PANIF", "PIX QRS UBER" ou "PAY OXXO": deduza o estabelecimento (panificadora, Uber, OXXO) e use-o em "nome".
 - Sem data informada, use a data de hoje. Sem conta informada, use a primeira conta da lista. Sem forma de pagamento, use Pix.
@@ -82,7 +83,7 @@ export class RecusaDaIA extends Error {}
 
 export async function classificar(
   entrada: Entrada,
-  categorias: Categoria[],
+  contexto: ContextoPlanilha,
   usuario: Usuario,
   hoje: string,
 ): Promise<Classificacao> {
@@ -103,9 +104,9 @@ export async function classificar(
     model: process.env.CLAUDE_MODEL || "claude-opus-5-5",
     max_tokens: 16000,
     // Classificar é uma tarefa simples; esforço baixo deixa a resposta mais rápida.
-    output_config: { effort: "low", format: zodOutputFormat(montarSchema(categorias, usuario)) },
+    output_config: { effort: "low", format: zodOutputFormat(montarSchema(contexto.categorias, usuario)) },
     cache_control: { type: "ephemeral" },
-    system: montarSistema(categorias, usuario),
+    system: montarSistema(contexto, usuario),
     messages: [{ role: "user", content: conteudo }],
   });
 
