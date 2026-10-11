@@ -1,93 +1,134 @@
 import { describe, expect, it } from "vitest";
-import type { LinhaDoFluxo } from "@/lib/metas";
-import { montarPainel } from "@/lib/painel";
+import { investimentosDasLinhas, type LinhaDoFluxo } from "@/lib/metas";
+import { montarPainel, pagaFaturaSeparado } from "@/lib/painel";
 
 let n = 2;
-const l = (data: string, valor: number, despesa: string, banco: string, extra: Partial<LinhaDoFluxo> = {}): LinhaDoFluxo => ({
-  linha: n++,
-  data,
-  valor,
-  despesa,
-  descricao: despesa,
-  banco,
-  pagoCom: "Pix",
-  tipo: valor > 0 ? "Renda Principal" : "Gastos Pessoais",
-  ...extra,
+const l = (
+  data: string,
+  valor: number,
+  despesa: string,
+  banco: string,
+  pagoCom = "Pix",
+  descricao = despesa,
+  tipo = valor > 0 ? "Renda Principal" : "Gastos Pessoais",
+): LinhaDoFluxo => ({ linha: n++, data, valor, despesa, descricao, banco, pagoCom, tipo });
+
+const HOJE = "2026-10-11";
+
+// Quem lança as compras do cartão e também o pagamento da fatura saindo da conta.
+const comPagamento: LinhaDoFluxo[] = [
+  l("2026-09-01", 1000, "SI", "Itaú", "SI", "SI", "SI"),
+  l("2026-09-05", 2000, "Salário", "Itaú"),
+  l("2026-09-15", -300, "Lanches", "Nubank", "Crédito"),
+  l("2026-09-15", -300, "Transferencia entre contas", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+  l("2026-09-20", -400, "Supermercado", "Itaú"),
+  l("2026-09-20", 60, "Reembolsos", "Itaú", "Pix", "Pagar fatura", "Outras Rendas"),
+  l("2026-10-05", 3000, "Salário", "Itaú"),
+  l("2026-10-06", -100, "Transferencia entre contas", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+  l("2026-10-07", -500, "Supermercado", "Itaú"),
+  l("2026-10-09", -112.42, "Educação", "Itaú", "Previsão", "Resgate 10/12"), // atrasada
+  l("2026-10-15", -700, "Supermercado", "Nubank", "Crédito"),
+  l("2026-10-15", 0, "Transferencia entre contas", "Itaú", "Previsão", "Pagamento do Cartão", "Entre Contas"),
+  l("2026-10-17", -65, "Telefone", "Itaú", "Previsão", "[previsto] Celular"),
+  l("2026-11-05", -361.67, "Custo de trabalho", "Itaú", "Previsão", "7/12 - Livro"),
+  l("2026-11-10", -5000, "Aluguel", "Itaú", "Previsão", "Reforma"),
+  l("2026-11-15", -200, "Supermercado", "Nubank", "Crédito", "Mercado - compra em 16/10/2026"),
+  l("2026-12-05", -361.67, "Custo de trabalho", "Itaú", "Previsão", "8/12 - Livro"),
+  l("2026-12-07", 6000, "Salário", "Itaú", "Previsão"),
+];
+const usuario = { contas: ["Itaú", "Nubank"], cartoes: [{ nome: "Nubank", fechamento: 8, vencimento: 15, limite: 400 }] };
+
+describe("montarPainel (pagamento da fatura lançado à parte)", () => {
+  const p = montarPainel(comPagamento, usuario, [{ despesa: "Supermercado", valor: 600 }], HOJE);
+
+  it("percebe o jeito de lançar e não tira as compras no crédito do saldo", () => {
+    expect(pagaFaturaSeparado(comPagamento)).toBe(true);
+    // 1000 + 2000 − 300 − 400 + 60 + 3000 − 100 − 500 (a previsão atrasada ainda não saiu)
+    expect(p.saldos).toEqual([{ conta: "Itaú", valor: 4760 }]);
+    expect(p.saldoHoje).toBe(4760);
+  });
+
+  it("abate da fatura o que já foi pago antes do vencimento e mostra o limite livre", () => {
+    const [nubank] = p.cartoes;
+    expect(nubank.antecipado).toBe(100); // pago em 06/10, depois do vencimento de 15/09
+    expect(nubank.proxima).toEqual({ data: "2026-10-15", valor: 700, restante: 600 });
+    expect(nubank.emAberto).toBe(800); // 700 + 200 − 100
+    expect(nubank.disponivel).toBe(-400);
+  });
+
+  it("lista as contas a pagar com a atrasada primeiro, e a fatura pelo valor que falta", () => {
+    expect(p.aPagar.map((c) => [c.descricao, c.valor, c.atrasada])).toEqual([
+      ["Resgate 10/12", 112.42, true],
+      ["Fatura Nubank", 600, false],
+      ["Celular", 65, false],
+    ]);
+    expect(p.totalAPagar).toBe(777.42);
+  });
+
+  it("avisa quando o saldo vai ficar negativo e quando volta", () => {
+    // 4760 − 112,42 (atrasada, amanhã) − 600 (fatura) − 65 − 361,67 − 5000 → negativo em 10/11
+    expect(p.alerta?.negativoEm).toBe("2026-11-10");
+    expect(p.alerta?.menor.data).toBe("2026-12-05");
+    expect(p.alerta?.voltaEm).toBe("2026-12-07");
+  });
+
+  it("monta a cascata por semana do passado ao futuro, emendando os saldos", () => {
+    expect(p.porDia).toBe(false);
+    expect(p.barras.at(0)!.inicio).toBe("2026-07-12");
+    const ultimaDoPassado = p.barras.filter((b) => !b.futuro).at(-1)!;
+    expect(ultimaDoPassado.fim).toBe(HOJE);
+    expect(ultimaDoPassado.saldoFinal).toBe(4760);
+    p.barras.slice(1).forEach((b, i) => expect(b.saldoInicial).toBe(p.barras[i].saldoFinal));
+    const umMes = montarPainel(comPagamento, usuario, [], HOJE, { passado: 1, futuro: 1 });
+    expect(umMes.porDia).toBe(true);
+  });
+
+  it("junta parcelas futuras e o cartão em aberto nas dívidas", () => {
+    expect(p.dividas).toEqual([
+      { nome: "Cartão Nubank (a vencer)", valor: 800, parcelas: 0 },
+      { nome: "Livro", valor: 723.34, parcelas: 2 },
+      { nome: "Resgate", valor: 112.42, parcelas: 1 },
+    ]);
+  });
+
+  it("compara os gastos com o mês anterior, sem transferências nem pagamento de fatura", () => {
+    expect(p.gastos.itens).toEqual([
+      { despesa: "Supermercado", atual: 1200, anterior: 400, variacao: 2, meta: 600 },
+      { despesa: "Educação", atual: 112.42, anterior: 0 },
+      { despesa: "Telefone", atual: 65, anterior: 0 },
+      { despesa: "Lanches", atual: 0, anterior: 300, variacao: -1 },
+    ]);
+  });
+
+  it("filtra por banco", () => {
+    const so = montarPainel(comPagamento, usuario, [], HOJE, { banco: "itau" });
+    expect(so.filtro.banco).toBe("Itaú");
+    expect(so.aPagar.map((c) => c.descricao)).toEqual(["Resgate 10/12", "Celular"]);
+  });
 });
 
-const fluxo: LinhaDoFluxo[] = [
-  l("2026-09-01", 1000, "SI", "Itaú", { tipo: "SI" }),
-  l("2026-10-05", 3000, "Salário", "Itaú"),
-  l("2026-10-06", -500, "Supermercado", "Itaú"),
-  l("2026-10-07", -200, "Supermercado", "Inter"),
-  l("2026-10-08", 50, "Supermercado", "Inter"), // estorno
-  l("2026-10-09", -1200, "Aluguel", "Itaú", { tipo: "Gastos Fixos" }),
-  l("2026-10-10", -300, "Lanches", "Nubank", { pagoCom: "Crédito" }), // fatura já paga
-  l("2026-10-20", -2357, "Aluguel", "Itaú", { tipo: "Gastos Fixos", descricao: "[previsto] Aluguel" }),
-  l("2026-11-10", -400, "Lanches", "Nubank", { pagoCom: "Crédito" }),
-  l("2026-12-10", -100, "Educação", "Nubank", { pagoCom: "Crédito" }),
-  l("2026-11-10", -80, "Lanches", "Bradesco", { pagoCom: "Crédito" }),
-  l("2026-10-09", -150, "Transferencia entre contas", "Itaú", { tipo: "Entre Contas" }),
-  l("2026-10-09", 150, "Transferencia entre contas", "Inter", { tipo: "Entre Contas" }),
-  // Compra no crédito com o nome do banco na coluna Banco: é do cartão "Nubank Cartão".
-  l("2026-11-15", -60, "Lanches", "Nubank", { pagoCom: "Crédito" }),
-];
+describe("montarPainel (só as compras, como o Dino lança)", () => {
+  const soCompras: LinhaDoFluxo[] = [
+    l("2026-10-01", 2000, "Salário", "Itaú"),
+    l("2026-10-10", -300, "Lanches", "Nubank Cartão", "Crédito"),
+    l("2026-11-10", -150, "Lanches", "Nubank Cartão", "Crédito"),
+  ];
+  const p = montarPainel(soCompras, { contas: ["Itaú"], cartoes: [{ nome: "Nubank Cartão", fechamento: 3, vencimento: 10, limite: 1000 }] }, [], HOJE);
 
-const usuario = {
-  cartoes: [
-    { nome: "Nubank", fechamento: 3, vencimento: 10, limite: 2000 },
-    { nome: "Itaú Click", fechamento: 1, vencimento: 8 },
-  ],
-};
-
-describe("montarPainel", () => {
-  const p = montarPainel(fluxo, usuario, [{ despesa: "Supermercado", valor: 600 }], "2026-10-11");
-
-  it("soma o saldo de cada conta até hoje, sem previstos; o que foi no cartão aparece como fatura vencida", () => {
-    expect(p.saldos).toEqual([
-      { conta: "Itaú", valor: 2150 },
-      { conta: "Inter", valor: 0 },
-      { conta: "Nubank (faturas vencidas)", valor: -300 },
-    ].filter((s) => s.valor !== 0));
-    expect(p.saldoTotal).toBe(1850);
+  it("conta a fatura vencida como saída e a próxima como conta a pagar futura", () => {
+    expect(pagaFaturaSeparado(soCompras)).toBe(false);
+    expect(p.saldoHoje).toBe(1700);
+    expect(p.cartoes[0]).toMatchObject({ emAberto: 150, disponivel: 850, proxima: { data: "2026-11-10", restante: 150 } });
+    expect(p.alerta).toBeUndefined();
   });
+});
 
-  it("mostra a próxima fatura e o limite livre de cada cartão", () => {
-    const nubank = p.cartoes.find((c) => c.nome === "Nubank")!;
-    expect(nubank.faturas).toEqual([
-      { mes: "2026-11", valor: 460 },
-      { mes: "2026-12", valor: 100 },
-    ]);
-    expect(nubank.emAberto).toBe(560);
-    expect(nubank.disponivel).toBe(1440);
-    expect(p.cartoes.find((c) => c.nome === "Itaú Click")!.faturas).toEqual([]);
-    const bradesco = p.cartoes.find((c) => c.nome === "Bradesco")!;
-    expect(bradesco.emAberto).toBe(80);
-    expect(bradesco.limite).toBeUndefined();
-  });
-
-  it("agrupa os gastos do mês por categoria, com estorno abatendo e a meta junto", () => {
-    expect(p.gastos).toEqual([
-      { despesa: "Aluguel", valor: 3557 },
-      { despesa: "Supermercado", valor: 650, meta: 600 },
-      { despesa: "Lanches", valor: 300 },
-    ]);
-    expect(p.temPrevistosNoMes).toBe(true);
-  });
-
-  it("monta a cascata do mês do saldo inicial ao final", () => {
-    expect(p.cascata[0]).toEqual({ rotulo: "Início do mês", valor: 1000, tipo: "inicio" });
-    expect(p.cascata.at(-1)).toEqual({ rotulo: "Fim do mês", valor: 1000 + 3000 + 50 - 500 - 200 - 1200 - 300 - 2357, tipo: "fim" });
-    const meio = p.cascata.slice(1, -1);
-    const soma = meio.reduce((s, d) => s + (d.tipo === "entrada" ? d.valor : -d.valor), 0);
-    expect(1000 + soma).toBeCloseTo(p.cascata.at(-1)!.valor);
-    expect(meio.map((d) => d.rotulo)).toEqual(["Renda Principal", "Gastos Fixos", "Gastos Pessoais"]);
-    // Transferências entre contas se anulam e não viram degrau.
-  });
-
-  it("navega entre os meses que têm lançamentos", () => {
-    expect(p.mesAnterior).toBe("2026-09");
-    expect(p.mesSeguinte).toBe("2026-11");
-    expect(montarPainel(fluxo, usuario, [], "2026-10-11", "2026-09").mesAnterior).toBeUndefined();
+describe("investimentosDasLinhas", () => {
+  it("pega o ativo e o total atualizado, pulando linhas vazias", () => {
+    const linhas = [
+      ["", "", "Ações", "Ações", "", "", "", "R$ 0,00", "R$ 0,00"],
+      ["Cofrinho PicPay", "-", "Caixa", "Renda Fixa", 553.67, 605.45, 1, 553.67, 605.45],
+    ];
+    expect(investimentosDasLinhas(linhas)).toEqual([{ nome: "Cofrinho PicPay", valor: 605.45 }]);
   });
 });

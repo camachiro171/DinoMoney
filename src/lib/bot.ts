@@ -5,7 +5,8 @@ import { ehRenda } from "./categorias";
 import type { Usuario } from "./config";
 import type { ContextoPlanilha, Gravacao, LinhaExistente } from "./planilha";
 import { RecusaDaIA, RespostaGrandeDemais, type Classificacao, type Entrada } from "./classificador";
-import { hojeEmSaoPaulo } from "./datas";
+import { hojeEmSaoPaulo, paraPlanilha } from "./datas";
+import { saldosPorConta } from "./painel";
 import { CategoriaDesconhecida, paraLinhas, resumir, tirarRepetidas, type LinhaFluxo } from "./lancamentos";
 import type { MensagemRecebida } from "./whatsapp";
 
@@ -42,11 +43,15 @@ Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.
 Metas: *meta mercado 800* define, *metas* mostra como está o mês.
 Contas fixas: diga "aluguel 2.357 todo dia 7" que eu prevejo os próximos meses. *recorrentes* lista, *remover recorrente aluguel* tira.
 *previsão* mostra o saldo esperado dos próximos meses.
+Conferir saldo: *saldo Nubank 780,73* compara com o banco e lança a diferença (rendimento) com a data de hoje.
 Suas contas: *minhas contas* mostra a lista, *nova conta Inter* cadastra, *novo cartão Nubank fecha 3 vence 10* cadastra um cartão, *limite Nubank 5000* guarda o limite dele e *remover conta Inter* tira da lista.
 No site, o botão *Painel* mostra saldos, gastos do mês, a fatura que vem e o limite livre.`;
 
 /** "Nubank fecha 3 vence 10", "Inter fecha dia 5 e vence dia 12". */
 const COMANDO_CARTAO = /^(?:(?:novo|adicionar|cadastrar)\s+)?(?:o\s+)?(?:cart[aã]o\s+)?(.+?)\s+fecha\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*(?:,|e)?\s*vence\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*\.?$/i;
+
+/** "saldo Nubank 780,73", "conferir saldo do PicPay 605.45", "saldo Inter é -20". */
+const COMANDO_SALDO = /^(?:conferir\s+)?saldo\s+(?:d[oa]\s+|n[oa]\s+)?(.+?)\s+(?:[eé]\s+(?:de\s+)?|de\s+)?(?:r\$\s*)?(-?\s*\d[\d.]*(?:,\d{1,2})?)\s*(?:reais)?\.?$/i;
 
 /** "limite Nubank 5000", "limite do cartão Inter de R$ 2.500,00". */
 const COMANDO_LIMITE = /^limite\s+(?:do\s+)?(?:cart[aã]o\s+)?(.+?)\s+(?:de\s+|[eé]\s+)?(?:r\$\s*)?(\d[\d.]*(?:,\d{1,2})?)\s*(?:reais)?\.?$/i;
@@ -175,6 +180,71 @@ function listarContas(usuario: Usuario): string {
   ].join("\n");
 }
 
+/** "1.234,56", "780.73" ou "-20" viram número. */
+function valorDigitado(texto: string): number {
+  const t = texto.replace(/\s/g, "");
+  const decimalComPonto = !t.includes(",") && /\.\d{1,2}$/.test(t);
+  return Number(decimalComPonto ? t : t.replace(/\./g, "").replace(",", "."));
+}
+
+/**
+ * Confere o saldo de uma conta com o do banco: a diferença entra no fluxo com a data de hoje,
+ * como rendimento (se o banco tem mais) ou como diferença a investigar (se tem menos).
+ */
+async function conferirSaldo(
+  nomeConta: string,
+  valorTexto: string,
+  mensagemId: string,
+  usuario: Usuario,
+  deps: Dependencias,
+  hoje: string,
+): Promise<string> {
+  const noBanco = valorDigitado(valorTexto);
+  if (!Number.isFinite(noBanco)) return "Não entendi o valor. Exemplo: *saldo Nubank 780,73*.";
+  const contas = usuario.contas;
+  const alvo = comparavel(nomeConta);
+  const conta =
+    contas.find((c) => comparavel(c) === alvo) ??
+    (contas.filter((c) => comparavel(c).includes(alvo)).length === 1 ? contas.find((c) => comparavel(c).includes(alvo)) : undefined);
+  if (!conta) {
+    return `Não achei a conta "${nomeConta}". Suas contas: ${contas.map((c) => `*${c}*`).join(", ") || "nenhuma"}. Exemplo: *saldo ${contas[0] ?? "Nubank"} 780,73*.`;
+  }
+  const naPlanilha = saldosPorConta(await deps.lerFluxo(usuario), hoje).find((s) => comparavel(s.conta) === comparavel(conta))?.valor ?? 0;
+  const diferenca = Math.round((noBanco - naPlanilha) * 100) / 100;
+  if (Math.abs(diferenca) < 0.01) return `✅ Saldo do *${conta}* bate com a planilha: ${reais(noBanco)}.`;
+
+  const { categorias } = await deps.buscarContexto(usuario);
+  const achar = (teste: RegExp, renda: boolean) =>
+    categorias.find((c) => ehRenda(c) === renda && teste.test(comparavel(`${c.tipo} ${c.despesa}`)));
+  const categoria =
+    diferenca > 0
+      ? (achar(/rendimento|juros|dividendo/, true) ?? achar(/passiva/, true) ?? categorias.find(ehRenda))
+      : (achar(/outros custos financeiros/, false) ?? achar(/custos? financeiros?|tarifa/, false) ?? categorias.find((c) => !ehRenda(c)));
+  if (!categoria) return "Não achei uma categoria para lançar a diferença. Confira a aba Categorias da planilha.";
+
+  const linha: LinhaFluxo = {
+    data: paraPlanilha(hoje),
+    dataISO: hoje,
+    despesa: categoria.despesa,
+    descricao: diferenca > 0 ? "Rendimento (conferência de saldo)" : "Diferença na conferência de saldo",
+    nome: conta,
+    pagoCom: "Débito",
+    banco: conta,
+    valor: diferenca,
+    categoria,
+  };
+  const gravacao = await deps.gravarNoFluxo(usuario, [linha]);
+  const texto = [
+    `🏦 Conferi o *${conta}*: banco ${reais(noBanco)}, planilha ${reais(naPlanilha)}.`,
+    diferenca > 0
+      ? `Lancei ${reais(diferenca)} de rendimento hoje (${categoria.despesa}).`
+      : `Lancei ${reais(-diferenca)} como diferença hoje (${categoria.despesa}). Se for um gasto esquecido, mande *desfazer* e lance o gasto certo.`,
+    "Agora o saldo bate.",
+  ].join("\n");
+  await deps.registrarNoLog(usuario, mensagemId, gravacao, texto.split("\n")[1]);
+  return texto;
+}
+
 /** Conta ou cartão que apareceu no lançamento e ainda não estava em "Minhas contas": cadastra. */
 async function cadastrarNovas(linhas: LinhaFluxo[], usuario: Usuario, deps: Dependencias) {
   const conhecidas = new Set([...usuario.contas, ...usuario.cartoes.map((c) => c.nome)].map(comparavel));
@@ -235,6 +305,8 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
         ? `🗑️ Tirei *${removida}* das contas recorrentes e apaguei os previstos dela.`
         : `Não achei "${tirarRecorrente[1].trim()}" nas contas recorrentes. Mande *recorrentes* para ver a lista.`;
     }
+    const conferir = pedido.match(COMANDO_SALDO);
+    if (conferir) return conferirSaldo(conferir[1].trim(), conferir[2], msg.id, usuario, deps, hojeCmd);
     const limite = pedido.match(COMANDO_LIMITE);
     if (limite) {
       const valor = Number(limite[2].replace(/\./g, "").replace(",", "."));

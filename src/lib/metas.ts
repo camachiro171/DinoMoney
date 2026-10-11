@@ -116,3 +116,31 @@ export async function lerFluxo(usuario: Usuario): Promise<LinhaDoFluxo[]> {
     }))
     .filter((l) => /^\d{4}-\d{2}-\d{2}$/.test(l.data) && l.valor !== 0);
 }
+
+export interface Investimento {
+  nome: string;
+  valor: number;
+}
+
+/**
+ * Valor atualizado de cada investimento da aba "Investimentos" (coluna C = ativo, K = total atualizado,
+ * a partir da linha 10, como na planilha modelo). Sem a aba, devolve undefined.
+ */
+export async function lerInvestimentos(usuario: Usuario): Promise<Investimento[] | undefined> {
+  try {
+    const res = await cliente().spreadsheets.values.get({
+      spreadsheetId: usuario.planilhaId,
+      range: `${aba("Investimentos")}!C10:K500`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    return investimentosDasLinhas((res.data.values ?? []) as unknown[][]);
+  } catch {
+    return undefined;
+  }
+}
+
+export function investimentosDasLinhas(linhas: unknown[][]): Investimento[] {
+  return linhas
+    .map((l) => ({ nome: String(l[0] ?? "").trim(), valor: Math.round(numeroBR(l[8]) * 100) / 100 }))
+    .filter((i) => i.nome && i.valor !== 0);
+}
