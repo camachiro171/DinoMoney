@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CascataNoTempo } from "./cascata";
 import type { Investimento } from "@/lib/metas";
 import { OPCOES_MESES, type Barra, type Divida, type Filtro, type Painel, type Saldo } from "@/lib/painel";
 
@@ -25,70 +26,6 @@ function linkCom(f: Filtro, muda: Partial<Filtro>): string {
   q.set("futuro", String(novo.futuro));
   if (novo.mes) q.set("mes", novo.mes);
   return `/painel?${q.toString()}#${muda.mes !== undefined ? "gastos" : "fluxo"}`;
-}
-
-/**
- * Cascata no tempo: cada barra é um dia ou uma semana e começa onde a anterior terminou.
- * A linha é o saldo; depois de "hoje" as barras ficam claras (previsão); abaixo de zero fica vermelho.
- */
-function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIndice: number }) {
-  const W = 640;
-  const H = 240;
-  const topo = 14;
-  const base = 26;
-  const valores = [0, ...barras.flatMap((b) => [b.saldoInicial, b.saldoFinal])];
-  const max = Math.max(...valores);
-  const min = Math.min(...valores);
-  const faixa = max - min || 1;
-  const y = (v: number) => topo + ((max - v) / faixa) * (H - topo - base);
-  const largura = W / Math.max(1, barras.length);
-  const meses: { x: number; rotulo: string }[] = [];
-  barras.forEach((b, i) => {
-    const mes = b.inicio.slice(0, 7);
-    if (i === 0 || barras[i - 1].inicio.slice(0, 7) !== mes) meses.push({ x: i * largura, rotulo: mesCurto(mes) });
-  });
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="tempo" role="img" aria-label="Saldo ao longo do tempo">
-      {min < 0 && <rect x={0} y={y(0)} width={W} height={H - base - y(0)} className="area-negativa" />}
-      <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="linha-zero" />
-      {barras.map((b, i) => {
-        const de = b.saldoInicial;
-        const ate = b.saldoFinal;
-        const sobe = ate >= de;
-        return (
-          <rect
-            key={i}
-            x={i * largura + largura * 0.12}
-            y={y(Math.max(de, ate))}
-            width={largura * 0.76}
-            height={Math.max(1.5, Math.abs(y(de) - y(ate)))}
-            rx={1.5}
-            className={`${sobe ? "sobe" : "desce"}${b.futuro ? " previsto" : ""}`}
-          >
-            <title>{`${diaMes(b.inicio)}${b.fim !== b.inicio ? ` a ${diaMes(b.fim)}` : ""}: entrou ${reais(b.entrou)}, saiu ${reais(b.saiu)}, saldo ${reais(b.saldoFinal)}`}</title>
-          </rect>
-        );
-      })}
-      <polyline className="linha-saldo" points={barras.map((b, i) => `${(i + 1) * largura},${y(b.saldoFinal)}`).join(" ")} />
-      {hojeIndice >= 0 && (
-        <>
-          <line x1={(hojeIndice + 1) * largura} x2={(hojeIndice + 1) * largura} y1={0} y2={H - base} className="linha-hoje" />
-          <text x={(hojeIndice + 1) * largura + 4} y={11} className="texto-hoje">
-            hoje
-          </text>
-        </>
-      )}
-      {meses.map((m) => (
-        <text key={m.x} x={m.x + 2} y={H - 8} className="texto-eixo">
-          {m.rotulo}
-        </text>
-      ))}
-      <text x={W - 2} y={y(0) - 4} textAnchor="end" className="texto-zero">
-        R$ 0
-      </text>
-    </svg>
-  );
 }
 
 function Chips({ f, campo, rotulo }: { f: Filtro; campo: "passado" | "futuro"; rotulo: string }) {
