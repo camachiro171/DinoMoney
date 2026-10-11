@@ -169,3 +169,23 @@ describe("montarPainel (caixinhas e cofrinhos)", () => {
     expect(p.alerta).toBeUndefined();
   });
 });
+
+describe("limite do cartão (pagamentos feitos entre o fechamento e o vencimento)", () => {
+  const fatura = [
+    l("2026-09-01", 2000, "Salário", "Itaú"),
+    l("2026-09-10", -200, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"), // antes do vencimento de 15/09
+    l("2026-09-15", -300, "Supermercado", "Nubank", "Crédito"),
+    l("2026-09-20", -100, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-10-08", -250, "Pagamento", "Itaú", "Debito", "Pagamento do Cartão", "Entre Contas"),
+    l("2026-10-08", 250, "Pagamento", "Nubank", "Crédito", "Pagamento do Cartão", "Entre Contas"), // espelho, não é estorno
+    l("2026-10-15", -650, "Supermercado", "Nubank", "Crédito"),
+    l("2026-11-15", -50, "Assinaturas", "Nubank", "Crédito"),
+  ];
+  const p = montarPainel(fatura, usuario, [], HOJE);
+
+  it("usa todas as compras menos todos os pagamentos, sem contar o espelho do pagamento", () => {
+    // 300 + 650 + 50 − 200 − 100 − 250 = 450 (o pagamento de 10/09 já pagou parte da compra de 15/09)
+    expect(p.cartoes[0].emAberto).toBe(450);
+    expect(p.cartoes[0].disponivel).toBe(-50);
+  });
+});
