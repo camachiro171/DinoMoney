@@ -1,5 +1,5 @@
 import type { Usuario } from "./config";
-import type { Categoria } from "./categorias";
+import type { ContextoPlanilha, Gravacao } from "./planilha";
 import { RecusaDaIA, type Classificacao, type Entrada } from "./classificador";
 import { hojeEmSaoPaulo } from "./datas";
 import { CategoriaDesconhecida, paraLinhas, resumir, type LinhaFluxo } from "./lancamentos";
@@ -7,10 +7,10 @@ import type { MensagemRecebida } from "./whatsapp";
 
 /** Tudo que o bot precisa do mundo lá fora; nos testes trocamos por versões falsas. */
 export interface Dependencias {
-  buscarCategorias(u: Usuario): Promise<Categoria[]>;
-  classificar(e: Entrada, c: Categoria[], u: Usuario, hoje: string): Promise<Classificacao>;
-  gravarNoFluxo(u: Usuario, linhas: LinhaFluxo[]): Promise<number[]>;
-  registrarNoLog(u: Usuario, mensagemId: string, linhas: number[], resumo: string): Promise<void>;
+  buscarContexto(u: Usuario): Promise<ContextoPlanilha>;
+  classificar(e: Entrada, c: ContextoPlanilha, u: Usuario, hoje: string): Promise<Classificacao>;
+  gravarNoFluxo(u: Usuario, linhas: LinhaFluxo[]): Promise<Gravacao>;
+  registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
   baixarMidia(mediaId: string): Promise<{ base64: string; mime: string }>;
   agora?: () => Date;
@@ -69,12 +69,13 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
   if (typeof entrada === "string") return entrada;
 
   const hoje = hojeEmSaoPaulo(deps.agora?.());
-  const categorias = await deps.buscarCategorias(usuario);
+  const contexto = await deps.buscarContexto(usuario);
+  const { categorias } = contexto;
   if (categorias.length === 0) return "Não encontrei as categorias na sua planilha (aba de contas). Fale com seu mentor.";
 
   let resultado: Classificacao;
   try {
-    resultado = await deps.classificar(entrada, categorias, usuario, hoje);
+    resultado = await deps.classificar(entrada, contexto, usuario, hoje);
   } catch (erro) {
     if (erro instanceof RecusaDaIA) return "Não consegui processar essa mensagem. Pode escrever de outro jeito?";
     throw erro;
@@ -94,8 +95,8 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
     }
     throw erro;
   }
-  const numeros = await deps.gravarNoFluxo(usuario, linhas.flat());
+  const gravacao = await deps.gravarNoFluxo(usuario, linhas.flat());
   const texto = resumir(resultado.lancamentos, linhas);
-  await deps.registrarNoLog(usuario, msg.id, numeros, texto.split("\n")[1] ?? "");
+  await deps.registrarNoLog(usuario, msg.id, gravacao, texto.split("\n")[1] ?? "");
   return texto;
 }

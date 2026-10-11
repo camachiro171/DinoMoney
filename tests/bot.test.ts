@@ -7,11 +7,11 @@ import { categorias, usuario } from "./fixtures";
 function fakes(classificacao?: Classificacao) {
   const gravadas: LinhaFluxo[] = [];
   const deps: Dependencias = {
-    buscarCategorias: vi.fn(async () => categorias),
+    buscarContexto: vi.fn(async () => ({ categorias, exemplos: [] })),
     classificar: vi.fn(async () => classificacao!),
     gravarNoFluxo: vi.fn(async (_u: unknown, linhas: LinhaFluxo[]) => {
       gravadas.push(...linhas);
-      return linhas.map((_, i) => 10 + i);
+      return { linhas: linhas.map((_, i) => 10 + i), extras: false };
     }),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
@@ -36,7 +36,7 @@ describe("responder", () => {
     expect(gravadas).toHaveLength(1);
     expect(gravadas[0].valor).toBe(-6.5);
     expect(r).toContain("R$ 6,50");
-    expect(deps.registrarNoLog).toHaveBeenCalledWith(usuario, "wamid.1", [10], expect.any(String));
+    expect(deps.registrarNoLog).toHaveBeenCalledWith(usuario, "wamid.1", { linhas: [10], extras: false }, expect.any(String));
   });
 
   it("devolve a pergunta da IA quando falta informação, sem gravar", async () => {
@@ -57,7 +57,7 @@ describe("responder", () => {
     expect(deps.baixarMidia).toHaveBeenCalledWith("m1");
     expect(deps.classificar).toHaveBeenCalledWith(
       expect.objectContaining({ tipo: "imagem", mime: "image/jpeg" }),
-      categorias,
+      { categorias, exemplos: [] },
       usuario,
       "2026-10-10",
     );
