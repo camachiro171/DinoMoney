@@ -33,7 +33,7 @@ export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIn
   const H = 260;
   const topo = 24;
   const base = 26;
-  const esq = 76;
+  const esq = 96;
   const area = W - esq;
   const valores = [0, ...barras.flatMap((b) => [b.saldoInicial, b.saldoFinal])];
   const max = Math.max(...valores);
@@ -47,6 +47,9 @@ export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIn
     if (i === 0 || barras[i - 1].inicio.slice(0, 7) !== mes) meses.push({ x: i * largura, rotulo: mesCurto(mes) });
   });
 
+  // Saldo de hoje: o fim da barra de hoje (ou o começo do período, se ainda não passou nada).
+  const saldoAtual = hojeIndice >= 0 ? barras[hojeIndice].saldoFinal : barras[0]?.saldoInicial;
+
   const mostrada = escolhida ?? (hojeIndice >= 0 ? hojeIndice : barras.length - 1);
   const b = barras[mostrada];
 
@@ -56,12 +59,22 @@ export function CascataNoTempo({ barras, hojeIndice }: { barras: Barra[]; hojeIn
         {marcas(min, max).map((v) => (
           <g key={v}>
             <line x1={esq - 6} x2={W} y1={y(v)} y2={y(v)} className={v === 0 ? "linha-zero" : "linha-grade"} />
-            <text x={esq - 10} y={y(v) + 6} textAnchor="end" className={`texto-escala${v < 0 ? " negativo" : ""}`}>
-              {escala(v)}
-            </text>
+            {(saldoAtual === undefined || Math.abs(y(v) - y(saldoAtual)) > 24) && (
+              <text x={esq - 10} y={y(v) + 6} textAnchor="end" className={`texto-escala${v < 0 ? " negativo" : ""}`}>
+                {escala(v)}
+              </text>
+            )}
           </g>
         ))}
         <line x1={esq - 6} x2={esq - 6} y1={topo - 6} y2={H - base} className="eixo-valores" />
+        {saldoAtual !== undefined && (
+          <g>
+            <line x1={esq - 6} x2={W} y1={y(saldoAtual)} y2={y(saldoAtual)} className="linha-atual" />
+            <text x={esq - 10} y={y(saldoAtual) + 6} textAnchor="end" className="texto-atual">
+              {saldoAtual.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+            </text>
+          </g>
+        )}
         <g transform={`translate(${esq} 0)`}>
           {min < 0 && <rect x={0} y={y(0)} width={area} height={H - base - y(0)} className="area-negativa" />}
           {barras.map((barra, i) => {

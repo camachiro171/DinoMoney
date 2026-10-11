@@ -136,6 +136,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .tempo .texto-escala { font-size: 20px; fill: var(--suave); }
 .tempo .texto-escala.negativo { fill: var(--vermelho); }
 .tempo .linha-grade { stroke: var(--suave); opacity: 0.25; }
+.tempo .linha-atual { stroke: var(--azul); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.tempo .texto-atual { font-size: 21px; font-weight: 700; fill: var(--azul); paint-order: stroke; stroke: var(--fundo); stroke-width: 5px; }
 .tempo .eixo-valores { stroke: var(--suave); opacity: 0.6; }
 .tempo .coluna-escolhida { fill: var(--azul); opacity: 0.12; }
 .tempo .toque { fill: transparent; cursor: pointer; }
