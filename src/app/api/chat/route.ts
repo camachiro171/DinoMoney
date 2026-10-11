@@ -4,7 +4,7 @@ import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, lerResposta, registrarNoLog, salvarResposta } from "@/lib/planilha";
 import { mensagemDoSite } from "@/lib/web";
-import { cadastrarConta, definirCartao, prepararUsuario } from "@/lib/cadastro";
+import { cadastrarConta, definirCartao, removerConta, prepararUsuario } from "@/lib/cadastro";
 
 export const runtime = "nodejs";
 // Ler um extrato inteiro pode levar um tempo
@@ -44,6 +44,7 @@ export async function POST(req: Request) {
         lerComprasNoCartao,
         cadastrarConta,
         definirCartao,
+        removerConta,
         registrarNoLog,
         desfazerUltimo,
         baixarMidia,

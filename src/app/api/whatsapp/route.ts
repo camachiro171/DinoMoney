@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { responder } from "@/lib/bot";
 import { classificar } from "@/lib/classificador";
-import { cadastrarConta, definirCartao, encontrarUsuarioCadastrado, prepararUsuario } from "@/lib/cadastro";
+import { cadastrarConta, definirCartao, removerConta, encontrarUsuarioCadastrado, prepararUsuario } from "@/lib/cadastro";
 import { exigirEnv } from "@/lib/config";
 import { buscarContexto, desfazerUltimo, gravarNoFluxo, lerComprasNoCartao, jaProcessada, registrarNoLog } from "@/lib/planilha";
 import { assinaturaValida, baixarMidia, enviarTexto, extrairFalhas, extrairMensagens, type MensagemRecebida } from "@/lib/whatsapp";
@@ -35,6 +35,7 @@ async function processar(msg: MensagemRecebida) {
       lerComprasNoCartao,
       cadastrarConta,
       definirCartao,
+      removerConta,
       registrarNoLog,
       desfazerUltimo,
       baixarMidia,
