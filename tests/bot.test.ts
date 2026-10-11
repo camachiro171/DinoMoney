@@ -15,6 +15,8 @@ function fakes(classificacao?: Classificacao, existentes: LinhaExistente[] = [])
       return { linhas: linhas.map((_, i) => 10 + i), extras: false };
     }),
     lerComprasNoCartao: vi.fn(async () => existentes),
+    cadastrarConta: vi.fn(async () => {}),
+    definirCartao: vi.fn(async (_u: unknown, nome: string) => nome),
     registrarNoLog: vi.fn(async () => {}),
     desfazerUltimo: vi.fn(async () => 3),
     baixarMidia: vi.fn(async () => ({ base64: "AAAA", mime: "image/jpeg" })),
@@ -91,6 +93,30 @@ describe("responder", () => {
       expect(deps.lerComprasNoCartao).not.toHaveBeenCalled();
       expect(gravadas).toHaveLength(2);
     });
+  });
+
+  it("conta nova citada pela pessoa é cadastrada e avisada", async () => {
+    const { deps, gravadas } = fakes({
+      resposta: "lancamentos",
+      pergunta: "",
+      lancamentos: [
+        { data: "2026-10-10", despesa: "Lanches", descricao: "lanche", nome: "OXXO", pago_com: "Crédito", banco: "Bradesco", valor: 20, natureza: "saida", parcelas: 1 },
+        { data: "2026-10-10", despesa: "Lanches", descricao: "café", nome: "Padaria", pago_com: "Pix", banco: "itaú", valor: 5, natureza: "saida", parcelas: 1 },
+      ],
+    });
+    const r = await responder(texto("lanche 20 no cartão bradesco e café 5 no itaú"), usuario, deps);
+    expect(deps.cadastrarConta).toHaveBeenCalledTimes(1);
+    expect(deps.cadastrarConta).toHaveBeenCalledWith(usuario, "Bradesco", "Cartão");
+    expect(gravadas[0].data).toBe("10/10/2026");
+    expect(r).toContain("Cadastrei o cartão *Bradesco*");
+  });
+
+  it("comando de cartão grava fechamento e vencimento sem chamar a IA", async () => {
+    const { deps } = fakes();
+    const r = await responder(texto("Bradesco fecha dia 5 e vence dia 12"), usuario, deps);
+    expect(deps.definirCartao).toHaveBeenCalledWith(usuario, "Bradesco", 5, 12);
+    expect(deps.classificar).not.toHaveBeenCalled();
+    expect(r).toContain("fecha dia 5, vence dia 12");
   });
 
   it("desfazer apaga o último envio sem chamar a IA", async () => {

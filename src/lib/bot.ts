@@ -1,3 +1,4 @@
+import type { TipoConta } from "./cadastro";
 import type { Usuario } from "./config";
 import type { ContextoPlanilha, Gravacao, LinhaExistente } from "./planilha";
 import { RecusaDaIA, RespostaGrandeDemais, type Classificacao, type Entrada } from "./classificador";
@@ -11,6 +12,8 @@ export interface Dependencias {
   classificar(e: Entrada, c: ContextoPlanilha, u: Usuario, hoje: string): Promise<Classificacao>;
   gravarNoFluxo(u: Usuario, linhas: LinhaFluxo[]): Promise<Gravacao>;
   lerComprasNoCartao(u: Usuario): Promise<LinhaExistente[]>;
+  cadastrarConta(u: Usuario, nome: string, tipo: TipoConta): Promise<void>;
+  definirCartao(u: Usuario, nome: string, fechamento: number, vencimento: number): Promise<string>;
   registrarNoLog(u: Usuario, mensagemId: string, gravacao: Gravacao, resumo: string): Promise<void>;
   desfazerUltimo(u: Usuario): Promise<number>;
   baixarMidia(mediaId: string): Promise<{ base64: string; mime: string }>;
@@ -23,7 +26,14 @@ Me mande seus gastos e receitas que eu lanço na sua planilha:
 • Foto do cupom, comprovante ou print do app do banco
 • PDF do extrato ou da fatura do cartão
 
-Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.`;
+Comandos: *desfazer* apaga o último lançamento, *ajuda* mostra esta mensagem.
+Cartão novo? Me diga o fechamento e o vencimento: *Nubank fecha 3 vence 10*.`;
+
+/** "Nubank fecha 3 vence 10", "Inter fecha dia 5 e vence dia 12". */
+const COMANDO_CARTAO = /^(.+?)\s+fecha\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*(?:,|e)?\s*vence\s+(?:no\s+)?(?:dia\s+)?(\d{1,2})\s*\.?$/i;
+
+const comparavel = (t: string) =>
+  t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 const IMAGENS = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 type MimeImagem = (typeof IMAGENS)[number];
@@ -53,6 +63,31 @@ async function paraEntrada(msg: MensagemRecebida, deps: Dependencias): Promise<E
   }
 }
 
+/** Conta ou cartão que apareceu no lançamento e ainda não estava em "Minhas contas": cadastra. */
+async function cadastrarNovas(linhas: LinhaFluxo[], usuario: Usuario, deps: Dependencias) {
+  const conhecidas = new Set([...usuario.contas, ...usuario.cartoes.map((c) => c.nome)].map(comparavel));
+  const novas: { nome: string; tipo: TipoConta }[] = [];
+  for (const l of linhas) {
+    const chave = comparavel(l.banco);
+    if (!chave || conhecidas.has(chave)) continue;
+    conhecidas.add(chave);
+    const tipo: TipoConta = linhas.some((x) => comparavel(x.banco) === chave && x.pagoCom === "Crédito") ? "Cartão" : "Conta";
+    await deps.cadastrarConta(usuario, l.banco, tipo);
+    novas.push({ nome: l.banco, tipo });
+  }
+  return novas;
+}
+
+function avisoDeNovas(novas: { nome: string; tipo: TipoConta }[]): string {
+  return novas
+    .map((n) =>
+      n.tipo === "Cartão"
+        ? `🆕 Cadastrei o cartão *${n.nome}* nas suas contas. Essas compras entraram na data da compra; para eu lançar no vencimento da fatura, me diga: *${n.nome} fecha 5 vence 12* (com os dias certos).`
+        : `🆕 Cadastrei a conta *${n.nome}* nas suas contas.`,
+    )
+    .join("\n");
+}
+
 const MAX_REPETIDAS_NO_AVISO = 5;
 
 function avisoDeRepetidas(puladas: LinhaFluxo[]): string {
@@ -74,6 +109,15 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
       return n === 0
         ? "Não encontrei nenhum lançamento meu para desfazer."
         : `↩️ Pronto, apaguei ${n === 1 ? "o último lançamento" : `as ${n} linhas do último envio`}.`;
+    }
+    const cartao = msg.texto.trim().match(COMANDO_CARTAO);
+    if (cartao) {
+      const [fechamento, vencimento] = [Number(cartao[2]), Number(cartao[3])];
+      if (fechamento < 1 || fechamento > 31 || vencimento < 1 || vencimento > 31) {
+        return "Os dias precisam estar entre 1 e 31. Exemplo: *Nubank fecha 3 vence 10*.";
+      }
+      const nome = await deps.definirCartao(usuario, cartao[1].trim(), fechamento, vencimento);
+      return `💳 Pronto! Cartão *${nome}*: fecha dia ${fechamento}, vence dia ${vencimento}. As próximas compras nele entram no vencimento da fatura.`;
     }
   }
 
@@ -127,9 +171,11 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
       : `Essas ${puladas.length} compras já estavam na sua planilha, então não lancei de novo.`;
   }
 
+  const novas = await cadastrarNovas(linhas.flat(), usuario, deps);
   const gravacao = await deps.gravarNoFluxo(usuario, linhas.flat());
   let texto = resumir(lancamentos, linhas);
   if (puladas.length > 0) texto += `\n\n${avisoDeRepetidas(puladas)}`;
+  if (novas.length > 0) texto += `\n\n${avisoDeNovas(novas)}`;
   await deps.registrarNoLog(usuario, msg.id, gravacao, texto.split("\n")[1] ?? "");
   return texto;
 }

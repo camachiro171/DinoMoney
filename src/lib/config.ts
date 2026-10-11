@@ -18,8 +18,8 @@ const UsuarioSchema = z.object({
   planilhaId: z.string().min(10),
   abaFluxo: z.string().default("Cashflow"),
   abaCategorias: z.string().default("Contas"),
-  /** Contas bancárias e carteiras (coluna "Banco" da planilha). */
-  contas: z.array(z.string().min(1)).min(1),
+  /** Contas bancárias e carteiras (coluna "Banco" da planilha). A aba "Minhas contas" da planilha tem prioridade. */
+  contas: z.array(z.string().min(1)).default([]),
   cartoes: z.array(CartaoSchema).default([]),
 });
 
