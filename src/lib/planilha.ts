@@ -5,6 +5,12 @@ import type { LinhaFluxo } from "./lancamentos";
 
 const ABA_LOG = "DinoMoney_log";
 const ABA_RESPOSTAS = "DinoMoney_respostas";
+const ABA_CONVERSA = "DinoMoney_conversa";
+const CABECALHO_CONVERSA = ["quando", "quem", "texto", "proposta"];
+/** Quanto tempo uma conversa e uma proposta esperando "sim" continuam valendo. */
+const CONVERSA_VALE_MS = 6 * 60 * 60_000;
+const PROPOSTA_VALE_MS = 30 * 60_000;
+const TURNOS_LIDOS = 12;
 /** Até onde procuramos a próxima linha vazia do fluxo. */
 const LIMITE_LINHAS = 5000;
 
@@ -274,4 +280,42 @@ export async function desfazerUltimo(usuario: Usuario): Promise<number> {
     requestBody: { values: [["sim"]] },
   });
   return ultimo.linhas.length;
+}
+
+export interface ConversaGuardada {
+  turnos: { quem: "eu" | "dino"; texto: string }[];
+  /** Lançamentos propostos na última fala do Dino e ainda esperando o "sim" (JSON). */
+  proposta?: string;
+}
+
+/** Últimas falas da conversa com o Dino (as recentes) e a proposta que ainda espera resposta. */
+export async function lerConversa(usuario: Usuario, agora = new Date()): Promise<ConversaGuardada> {
+  await garantirAba(usuario, ABA_CONVERSA, CABECALHO_CONVERSA);
+  const res = await cliente().spreadsheets.values.get({ spreadsheetId: usuario.planilhaId, range: `${ABA_CONVERSA}!A2:D` });
+  const linhas = ((res.data.values ?? []) as string[][])
+    .map((l) => ({ quando: Date.parse(l[0] ?? ""), quem: l[1] === "dino" ? ("dino" as const) : ("eu" as const), texto: l[2] ?? "", proposta: l[3] ?? "" }))
+    .filter((l) => Number.isFinite(l.quando) && agora.getTime() - l.quando < CONVERSA_VALE_MS)
+    .slice(-TURNOS_LIDOS);
+  const ultima = linhas.at(-1);
+  const proposta =
+    ultima && ultima.quem === "dino" && ultima.proposta && agora.getTime() - ultima.quando < PROPOSTA_VALE_MS ? ultima.proposta : undefined;
+  return { turnos: linhas.map(({ quem, texto }) => ({ quem, texto })), ...(proposta ? { proposta } : {}) };
+}
+
+/** Guarda as falas na ordem em que aconteceram; a proposta vai junto da fala do Dino que a fez. */
+export async function guardarTurnos(
+  usuario: Usuario,
+  turnos: { quem: "eu" | "dino"; texto: string; proposta?: string }[],
+  agora = new Date(),
+): Promise<void> {
+  await garantirAba(usuario, ABA_CONVERSA, CABECALHO_CONVERSA);
+  await cliente().spreadsheets.values.append({
+    spreadsheetId: usuario.planilhaId,
+    range: `${ABA_CONVERSA}!A:D`,
+    valueInputOption: "RAW",
+    requestBody: {
+      // Um milissegundo a mais por fala mantém a ordem mesmo quando todas chegam juntas.
+      values: turnos.map((t, i) => [new Date(agora.getTime() + i).toISOString(), t.quem, t.texto, t.proposta ?? ""]),
+    },
+  });
 }
