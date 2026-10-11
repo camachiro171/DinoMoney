@@ -4,6 +4,7 @@ import { categoriasDoHistorico, exemplosDoHistorico, lerCategorias, type Categor
 import type { LinhaFluxo } from "./lancamentos";
 
 const ABA_LOG = "DinoMoney_log";
+const ABA_RESPOSTAS = "DinoMoney_respostas";
 /** Até onde procuramos a próxima linha vazia do fluxo. */
 const LIMITE_LINHAS = 5000;
 
@@ -126,23 +127,60 @@ export async function gravarNoFluxo(usuario: Usuario, linhas: LinhaFluxo[]): Pro
   return { linhas: usadas, extras };
 }
 
-async function garantirAbaLog(usuario: Usuario): Promise<void> {
+async function garantirAba(usuario: Usuario, titulo: string, cabecalho: string[]): Promise<void> {
   const sheets = cliente();
   const info = await sheets.spreadsheets.get({
     spreadsheetId: usuario.planilhaId,
     fields: "sheets.properties.title",
   });
-  if (info.data.sheets?.some((s) => s.properties?.title === ABA_LOG)) return;
+  if (info.data.sheets?.some((s) => s.properties?.title === titulo)) return;
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: usuario.planilhaId,
-    requestBody: { requests: [{ addSheet: { properties: { title: ABA_LOG, hidden: true } } }] },
+    requestBody: { requests: [{ addSheet: { properties: { title: titulo, hidden: true } } }] },
   });
   await sheets.spreadsheets.values.update({
     spreadsheetId: usuario.planilhaId,
-    range: `${ABA_LOG}!A1:G1`,
+    range: `${titulo}!A1`,
     valueInputOption: "RAW",
-    requestBody: { values: [["quando", "mensagem_id", "aba", "linhas", "resumo", "desfeito", "tipo_e_caixa"]] },
+    requestBody: { values: [cabecalho] },
   });
+}
+
+function garantirAbaLog(usuario: Usuario): Promise<void> {
+  return garantirAba(usuario, ABA_LOG, ["quando", "mensagem_id", "aba", "linhas", "resumo", "desfeito", "tipo_e_caixa"]);
+}
+
+export type EstadoResposta = "lendo" | "pronto";
+
+/** Guarda a resposta de um envio do site, para o navegador buscar quando a leitura terminar. */
+export async function salvarResposta(usuario: Usuario, id: string, estado: EstadoResposta, texto = ""): Promise<void> {
+  await garantirAba(usuario, ABA_RESPOSTAS, ["id", "estado", "resposta", "quando"]);
+  const sheets = cliente();
+  const ids = await sheets.spreadsheets.values.get({ spreadsheetId: usuario.planilhaId, range: `${ABA_RESPOSTAS}!A:A` });
+  const indice = ((ids.data.values ?? []) as string[][]).findIndex((l) => l[0] === id);
+  const linha = [[id, estado, texto, new Date().toISOString()]];
+  if (indice > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: usuario.planilhaId,
+      range: `${ABA_RESPOSTAS}!A${indice + 1}:D${indice + 1}`,
+      valueInputOption: "RAW",
+      requestBody: { values: linha },
+    });
+  } else {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: usuario.planilhaId,
+      range: `${ABA_RESPOSTAS}!A:D`,
+      valueInputOption: "RAW",
+      requestBody: { values: linha },
+    });
+  }
+}
+
+export async function lerResposta(usuario: Usuario, id: string): Promise<{ estado: EstadoResposta; texto: string } | undefined> {
+  await garantirAba(usuario, ABA_RESPOSTAS, ["id", "estado", "resposta", "quando"]);
+  const res = await cliente().spreadsheets.values.get({ spreadsheetId: usuario.planilhaId, range: `${ABA_RESPOSTAS}!A:C` });
+  const linha = ((res.data.values ?? []) as string[][]).find((l) => l[0] === id);
+  return linha ? { estado: linha[1] === "pronto" ? "pronto" : "lendo", texto: linha[2] ?? "" } : undefined;
 }
 
 interface RegistroLog {

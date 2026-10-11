@@ -1,6 +1,6 @@
 import type { Usuario } from "./config";
 import type { ContextoPlanilha, Gravacao } from "./planilha";
-import { RecusaDaIA, type Classificacao, type Entrada } from "./classificador";
+import { RecusaDaIA, RespostaGrandeDemais, type Classificacao, type Entrada } from "./classificador";
 import { hojeEmSaoPaulo } from "./datas";
 import { CategoriaDesconhecida, paraLinhas, resumir, type LinhaFluxo } from "./lancamentos";
 import type { MensagemRecebida } from "./whatsapp";
@@ -78,6 +78,9 @@ export async function responder(msg: MensagemRecebida, usuario: Usuario, deps: D
     resultado = await deps.classificar(entrada, contexto, usuario, hoje);
   } catch (erro) {
     if (erro instanceof RecusaDaIA) return "Não consegui processar essa mensagem. Pode escrever de outro jeito?";
+    if (erro instanceof RespostaGrandeDemais) {
+      return "Esse arquivo tem lançamentos demais para ler de uma vez. Pode mandar em partes menores (por exemplo, uma página ou um mês por vez)?";
+    }
     throw erro;
   }
 
